@@ -1,0 +1,50 @@
+# Git
+.git
+.gitignore
+
+# Node
+node_modules/
+frontend/node_modules/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+backend/venv/
+backend/*.egg-info/
+
+# Env files (use docker-compose env_file instead)
+backend/.env
+frontend/.env.development
+.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+frontend/dist/
+
+# IDE
+.vscode/
+.idea/
+
+# Uploaded files (mounted as volume)
+backend/uploads/
+
+# Database (mounted as volume)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Logs
+*.log
+
+# Scripts
+scripts/
+
+# Docker files (keep Dockerfile and docker-compose)
+docker-compose*.yml
+Dockerfile*
+.dockerignore

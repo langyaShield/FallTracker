@@ -1,0 +1,60 @@
+# ============================================================
+# FallTracker Docker Compose
+# Server: 2GB RAM, 2 CPU cores
+# Resource limits are tuned for this constraint.
+# ============================================================
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: falltracker
+    restart: unless-stopped
+
+    # -------- Resource Limits (tailored for 2GB server) --------
+    # Hard limit: container cannot exceed this
+    mem_limit: 512m
+    # Soft limit: container should stay at/below this under normal load
+    mem_reservation: 256m
+    # CPU: use at most 1.5 cores
+    cpus: "1.5"
+    # OOM priority: kill this container first if memory runs out
+    oom_kill_disable: false
+    # Memory swap: disabled (no swap file on this server)
+    mem_swappiness: 0
+    # Stop gracefully within 10 seconds
+    stop_grace_period: 10s
+
+    ports:
+      # 公网访问：http://YOUR_SERVER_IP
+      - "80:8000"
+
+    volumes:
+      # Persistent SQLite database (stored in /app/backend/data/)
+      - ./data/db:/app/backend/data
+      # Persistent uploaded files (resumes, etc.)
+      - ./data/uploads:/app/backend/uploads
+      # .env configuration (optional, falls back to defaults)
+      - ./backend/.env:/app/backend/.env:ro
+
+    environment:
+      # Override to use the host path inside the container
+      - DATABASE_URL=sqlite:////app/backend/data/falltracker.db
+      # Python optimization
+      - PYTHONDONTWRITEBYTECODE=1
+      - PYTHONUNBUFFERED=1
+
+    # Logging: keep it lean
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; exit(0) if urllib.request.urlopen('http://localhost:8000/health').status == 200 else exit(1)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s

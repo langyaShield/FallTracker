@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+.venv/
+venv/
+env/
+
+# Database
+*.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+node-v*/
+
+# Package manager caches
+.npm/
+.npm-global/
+.cache/
+.local/
+
+# IDE
+.vscode/
+.idea/
+.trae/
+*.swp
+*.swo
+*~
+
+# Uploads
+backend/uploads/
+
+# Logs
+*.log
+backend/spiders/logs/
+
+# Runtime data
+data/
+
+# Session logs
+sessions/
