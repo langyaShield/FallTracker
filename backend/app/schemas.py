@@ -1,11 +1,40 @@
-from pydantic import BaseModel
+import re
+from pydantic import BaseModel, field_validator
 from typing import Optional, List
 from datetime import datetime
+
+
+# === Event Type Label Map (T1-3 ICS 导出用) ===
+EVENT_TYPE_LABEL_MAP = {
+    "written": "笔试",
+    "interview": "面试",
+    "hr": "HR面",
+    "other": "其他",
+}
 
 
 class UserCreate(BaseModel):
     username: str
     password: str
+
+    @field_validator("username")
+    @classmethod
+    def validate_username(cls, v):
+        v = v.strip()
+        if len(v) < 2 or len(v) > 50:
+            raise ValueError("用户名长度必须在2-50个字符之间")
+        if not re.match(r'^[a-zA-Z0-9_\u4e00-\u9fff]+$', v):
+            raise ValueError("用户名只能包含字母、数字、下划线和中文")
+        return v
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v):
+        if len(v) < 6:
+            raise ValueError("密码长度不能少于6个字符")
+        if len(v) > 128:
+            raise ValueError("密码长度不能超过128个字符")
+        return v
 
 
 class UserOut(BaseModel):
@@ -20,6 +49,9 @@ class Token(BaseModel):
     token_type: str
 
 
+VALID_DELIVERY_STATUSES = {"pending", "delivered", "written", "interview", "offer", "rejected"}
+
+
 class DeliveryCreate(BaseModel):
     company: str
     position: str
@@ -29,6 +61,20 @@ class DeliveryCreate(BaseModel):
     resume_id: Optional[int] = None
     tags: Optional[List[str]] = []
     deadline: Optional[datetime] = None
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v):
+        if v not in VALID_DELIVERY_STATUSES:
+            raise ValueError(f"无效的状态值: {v}，可选值: {', '.join(sorted(VALID_DELIVERY_STATUSES))}")
+        return v
+
+    @field_validator("company", "position")
+    @classmethod
+    def validate_not_empty(cls, v):
+        if not v.strip():
+            raise ValueError("字段不能为空")
+        return v.strip()
 
 
 class DeliveryUpdate(BaseModel):
@@ -40,6 +86,13 @@ class DeliveryUpdate(BaseModel):
     resume_id: Optional[int] = None
     tags: Optional[List[str]] = None
     deadline: Optional[datetime] = None
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v):
+        if v is not None and v not in VALID_DELIVERY_STATUSES:
+            raise ValueError(f"无效的状态值: {v}，可选值: {', '.join(sorted(VALID_DELIVERY_STATUSES))}")
+        return v
 
 
 class DeliveryOut(BaseModel):
@@ -148,6 +201,11 @@ class ReviewOut(BaseModel):
         from_attributes = True
 
 
+# === DEPRECATED: 未启用的 Schema（N-BUG-4 标记） ===
+# 以下类已定义但无任何 router 引用。若要启用，参考需求分析者 T2-3。
+# 保留是为避免破坏潜在外部依赖。
+
+
 class RadarJobOut(BaseModel):
     id: int
     source: str
@@ -169,20 +227,6 @@ class RadarFilterOut(BaseModel):
     user_id: int
     tags: Optional[List[str]]
     updated_at: datetime
-    class Config:
-        from_attributes = True
-
-
-class UserSettingsUpdate(BaseModel):
-    llm_api_key: Optional[str] = None
-    llm_api_base: Optional[str] = None
-    llm_model: Optional[str] = None
-
-
-class UserSettingsOut(BaseModel):
-    llm_api_key: Optional[str] = None
-    llm_api_base: Optional[str] = None
-    llm_model: Optional[str] = None
     class Config:
         from_attributes = True
 
@@ -229,6 +273,45 @@ class ManualAddRequest(BaseModel):
     position: str
     link: str
     tags: List[str] = []
+
+
+class UserSettingsUpdate(BaseModel):
+    llm_api_key: Optional[str] = None
+    llm_api_base: Optional[str] = None
+    llm_model: Optional[str] = None
+
+
+class UserSettingsOut(BaseModel):
+    llm_api_key: Optional[str] = None
+    llm_api_base: Optional[str] = None
+    llm_model: Optional[str] = None
+    class Config:
+        from_attributes = True
+
+
+# === T1-2: Notification Schemas ===
+class NotificationOut(BaseModel):
+    id: int
+    type: str
+    title: str
+    body: Optional[str] = None
+    link: Optional[str] = None
+    is_read: bool
+    created_at: datetime
+    class Config:
+        from_attributes = True
+
+
+class NotificationListOut(BaseModel):
+    """Lightweight response with separate counters for bell badge."""
+    items: List["NotificationOut"]
+    unread_count: int
+    total: int
+
+
+class NotificationMarkRead(BaseModel):
+    """Bulk mark read request body."""
+    ids: Optional[List[int]] = None  # if None, mark all as read
 
 
 # === Crawler System Schemas ===

@@ -2,9 +2,9 @@
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus, Edit, Delete } from '@element-plus/icons-vue'
-import axios from 'axios'
-
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api'
+import api from '@/lib/api'
+import { extractErrorMessage } from '@/lib/error'
+import PageHeader from '@/components/PageHeader.vue'
 
 interface Review {
   id: number
@@ -26,10 +26,10 @@ const generating = ref(false)
 const fetchReviews = async () => {
   loading.value = true
   try {
-    const res = await axios.get(`${API_BASE}/reviews`)
+    const res = await api.get('/reviews')
     reviews.value = res.data || []
   } catch (e: any) {
-    ElMessage.error(e.response?.data?.detail || '获取复盘失败')
+    ElMessage.error(extractErrorMessage(e, '获取复盘失败'))
   } finally {
     loading.value = false
   }
@@ -37,7 +37,7 @@ const fetchReviews = async () => {
 
 const fetchDeliveries = async () => {
   try {
-    const res = await axios.get(`${API_BASE}/deliveries`)
+    const res = await api.get('/deliveries')
     deliveries.value = (res.data || []).map((d: any) => ({ id: d.id, company: d.company, position: d.position }))
   } catch {
     // ignore
@@ -61,26 +61,26 @@ const saveReview = async () => {
   }
   try {
     if (editing.value.id) {
-      await axios.put(`${API_BASE}/reviews/${editing.value.id}`, editing.value)
+      await api.put(`/reviews/${editing.value.id}`, editing.value)
     } else {
-      await axios.post(`${API_BASE}/reviews`, editing.value)
+      await api.post('/reviews', editing.value)
     }
     ElMessage.success('保存成功')
     dialogVisible.value = false
     fetchReviews()
   } catch (e: any) {
-    ElMessage.error(e.response?.data?.detail || '保存失败')
+    ElMessage.error(extractErrorMessage(e, '保存失败'))
   }
 }
 
 const generateStructured = async (id: number) => {
   generating.value = true
   try {
-    await axios.post(`${API_BASE}/reviews/${id}/generate`)
+    await api.post(`/reviews/${id}/generate`)
     ElMessage.success('生成成功')
     fetchReviews()
   } catch (e: any) {
-    ElMessage.error(e.response?.data?.detail || '生成失败')
+    ElMessage.error(extractErrorMessage(e, '生成失败'))
   } finally {
     generating.value = false
   }
@@ -88,11 +88,11 @@ const generateStructured = async (id: number) => {
 
 const deleteReview = async (id: number) => {
   try {
-    await axios.delete(`${API_BASE}/reviews/${id}`)
+    await api.delete(`/reviews/${id}`)
     ElMessage.success('删除成功')
     fetchReviews()
   } catch (e: any) {
-    ElMessage.error(e.response?.data?.detail || '删除失败')
+    ElMessage.error(extractErrorMessage(e, '删除失败'))
   }
 }
 
@@ -104,10 +104,9 @@ onMounted(() => {
 
 <template>
   <div class="reviews-page">
-    <div class="page-header">
-      <h2>面试复盘</h2>
+    <PageHeader title="面试复盘">
       <el-button type="primary" :icon="Plus" @click="openAdd">新建复盘</el-button>
-    </div>
+    </PageHeader>
 
     <div v-loading="loading" class="review-list">
       <el-card v-for="review in reviews" :key="review.id" class="review-card">
@@ -160,19 +159,6 @@ onMounted(() => {
 <style scoped>
 .reviews-page {
   height: 100%;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-}
-
-.page-header h2 {
-  margin: 0;
-  font-size: 24px;
-  color: #1e3a5f;
 }
 
 .review-list {

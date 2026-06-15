@@ -1,7 +1,19 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { computed } from 'vue'
+import { computed, markRaw } from 'vue'
+import {
+  Grid,
+  Calendar,
+  Aim,
+  Document,
+  EditPen,
+  TrendCharts,
+  Setting,
+  User,
+  SwitchButton,
+} from '@element-plus/icons-vue'
+import NotificationCenter from '@/components/NotificationCenter.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -10,13 +22,13 @@ const authStore = useAuthStore()
 const activeMenu = computed(() => route.path)
 
 const menuItems = [
-  { path: '/dashboard', title: '投递大盘', icon: 'Grid' },
-  { path: '/calendar', title: '日历视图', icon: 'Calendar' },
-  { path: '/radar', title: '爬虫雷达', icon: 'Aim' },
-  { path: '/resumes', title: '简历管理', icon: 'Document' },
-  { path: '/reviews', title: '面试复盘', icon: 'EditPen' },
-  { path: '/statistics', title: '数据统计', icon: 'TrendCharts' },
-  { path: '/settings', title: '设置', icon: 'Setting' },
+  { path: '/dashboard', title: '投递大盘', icon: markRaw(Grid) },
+  { path: '/calendar', title: '日历视图', icon: markRaw(Calendar) },
+  { path: '/radar', title: '爬虫雷达', icon: markRaw(Aim) },
+  { path: '/resumes', title: '简历管理', icon: markRaw(Document) },
+  { path: '/reviews', title: '面试复盘', icon: markRaw(EditPen) },
+  { path: '/statistics', title: '数据统计', icon: markRaw(TrendCharts) },
+  { path: '/settings', title: '设置', icon: markRaw(Setting) },
 ]
 
 const handleLogout = () => {
@@ -120,9 +132,6 @@ const handleLogout = () => {
 .sidebar-footer {
   padding: 16px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
 }
 
 .user-info {
@@ -131,6 +140,14 @@ const handleLogout = () => {
   gap: 8px;
   color: #cbd5e1;
   font-size: 14px;
+  margin-bottom: 12px;
+}
+
+.footer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .main-content {

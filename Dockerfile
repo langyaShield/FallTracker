@@ -1,7 +1,8 @@
 # ============================================================
 # Stage 1: Build frontend (Vue 3 + Vite)
 # ============================================================
-FROM node:22-alpine AS frontend-builder
+# Use daocloud mirror because default docker.io may be blocked in CN networks
+FROM docker.m.daocloud.io/library/node:22-alpine AS frontend-builder
 
 WORKDIR /build/frontend
 
@@ -14,15 +15,15 @@ RUN pnpm build
 # ============================================================
 # Stage 2: Backend runtime (Python + served frontend)
 # ============================================================
-FROM python:3.12-slim
+FROM docker.m.daocloud.io/library/python:3.12-slim
 
 WORKDIR /app
 
-# Use Tencent Cloud apt mirror for faster package downloads
-RUN (sed -i 's|http://deb.debian.org|http://mirrors.tencentyun.com|g' /etc/apt/sources.list 2>/dev/null; \
-     sed -i 's|http://security.debian.org|http://mirrors.tencentyun.com/debian-security|g' /etc/apt/sources.list 2>/dev/null; \
-     sed -i 's|http://deb.debian.org|http://mirrors.tencentyun.com|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null; \
-     sed -i 's|http://security.debian.org|http://mirrors.tencentyun.com/debian-security|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null) && \
+# Use Tencent Cloud mirrors for faster and reliable package downloads
+# Original deb sources are like "http://deb.debian.org/debian trixie main",
+# so we replace the whole host+path to avoid duplicated "debian/debian".
+RUN (sed -i 's|http://deb.debian.org/debian|https://mirrors.cloud.tencent.com/debian|g; s|http://security.debian.org/debian-security|https://mirrors.cloud.tencent.com/debian-security|g' /etc/apt/sources.list 2>/dev/null; \
+     sed -i 's|http://deb.debian.org/debian|https://mirrors.cloud.tencent.com/debian|g; s|http://security.debian.org/debian-security|https://mirrors.cloud.tencent.com/debian-security|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null) && \
     apt-get update
 
 # Install system deps: tesseract (OCR), fonts, and cleanup
@@ -41,7 +42,7 @@ RUN apt-get install -y --no-install-recommends \
 
 # Copy backend code (keeps the same directory structure as the repo)
 COPY backend/requirements.txt ./backend/
-RUN pip config set global.index-url https://mirrors.tencentyun.com/pypi/simple && \
+RUN pip config set global.index-url https://mirrors.cloud.tencent.com/pypi/simple && \
     pip install --no-cache-dir -r backend/requirements.txt
 
 COPY backend/ ./backend/

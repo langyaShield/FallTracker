@@ -2,10 +2,13 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, ArrowRight, Plus } from '@element-plus/icons-vue'
-import axios from 'axios'
+import { ArrowLeft, ArrowRight, Plus, Download } from '@element-plus/icons-vue'
+import api from '@/lib/api'
+import { EVENT_TYPE_LABEL_MAP, EVENT_TYPE_COLOR_MAP } from '@/lib/constants'
+import { formatDateTime } from '@/lib/format'
+import { extractErrorMessage } from '@/lib/error'
+import PageHeader from '@/components/PageHeader.vue'
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api'
 const router = useRouter()
 
 interface CalendarEvent {
@@ -26,20 +29,21 @@ const interviewEvents = ref<CalendarEvent[]>([])
 const deadlineEvents = ref<CalendarEvent[]>([])
 const calendarEvents = computed(() => [...interviewEvents.value, ...deadlineEvents.value])
 const currentDate = ref(new Date())
-const viewMode = ref<'month' | 'week'>('month')
+const loading = ref(false)
 const dialogVisible = ref(false)
 const editingEvent = ref<Partial<CalendarEvent> & { scheduled_at?: string; duration_minutes?: number; delivery_id?: number; event_type?: string }>({})
 const deliveries = ref<{ id: number; company: string; position: string }[]>([])
 
 const fetchEvents = async () => {
+  loading.value = true
   try {
-    const res = await axios.get(`${API_BASE}/events`)
+    const res = await api.get('/events')
     interviewEvents.value = (res.data || []).map((evt: any) => ({
       id: evt.id,
-      title: `${evt.company || ''} ${evt.event_type === 'written' ? '笔试' : evt.event_type === 'interview' ? '面试' : evt.event_type === 'hr' ? 'HR面' : '其他'}`,
+      title: `${evt.company || ''} ${EVENT_TYPE_LABEL_MAP[evt.event_type] || '其他'}`,
       start: evt.scheduled_at,
       end: new Date(new Date(evt.scheduled_at).getTime() + evt.duration_minutes * 60000).toISOString(),
-      color: evt.event_type === 'interview' ? '#3b82f6' : evt.event_type === 'written' ? '#8b5cf6' : evt.event_type === 'hr' ? '#f59e0b' : '#94a3b8',
+      color: EVENT_TYPE_COLOR_MAP[evt.event_type] || '#94a3b8',
       extendedProps: {
         delivery_id: evt.delivery_id,
         event_type: evt.event_type,
@@ -48,15 +52,16 @@ const fetchEvents = async () => {
       }
     }))
   } catch (e: any) {
-    ElMessage.error(e.response?.data?.detail || '获取事件失败')
+    ElMessage.error(extractErrorMessage(e, '获取事件失败'))
+  } finally {
+    loading.value = false
   }
 }
 
 const fetchDeliveries = async () => {
   try {
-    const res = await axios.get(`${API_BASE}/deliveries`)
+    const res = await api.get('/deliveries')
     deliveries.value = (res.data || []).map((d: any) => ({ id: d.id, company: d.company, position: d.position }))
-    // Build deadline events from deliveries that have a deadline
     deadlineEvents.value = (res.data || [])
       .filter((d: any) => d.deadline)
       .map((d: any) => ({
@@ -72,13 +77,37 @@ const fetchDeliveries = async () => {
           position: d.position,
         }
       }))
-  } catch (e: any) {
+  } catch {
     // ignore
   }
 }
 
 const daysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate()
 const firstDayOfMonth = (year: number, month: number) => new Date(year, month, 1).getDay()
+
+// N-BUG-5: 24h 内面试提醒数据源
+const upcomingAlerts = computed(() => {
+  const now = Date.now()
+  const horizon = now + 24 * 60 * 60 * 1000
+  const upcoming: { title: string; body: string; scheduledAt: number }[] = []
+  for (const evt of interviewEvents.value) {
+    if (evt.extendedProps?.event_type === 'deadline') continue
+    const ts = new Date(evt.start).getTime()
+    if (ts >= now && ts <= horizon) {
+      const hours = Math.floor((ts - now) / 3_600_000)
+      const mins = Math.floor(((ts - now) % 3_600_000) / 60_000)
+      const when = hours > 0 ? `${hours}小时${mins}分钟后` : `${mins}分钟后`
+      upcoming.push({
+        title: `📅 ${when} 即将开始: ${evt.title}`,
+        body: `请提前 10 分钟进入面试环境并检查设备`,
+        scheduledAt: ts,
+      })
+    }
+  }
+  return upcoming.sort((a, b) => a.scheduledAt - b.scheduledAt)
+})
+
+const hasDeadlines = computed(() => deadlineEvents.value.length > 0)
 
 const calendarDays = computed(() => {
   const year = currentDate.value.getFullYear()
@@ -91,7 +120,8 @@ const calendarDays = computed(() => {
   return result
 })
 
-const getEventsForDay = (day: number) => {
+const getEventsForDay = (day: number | null) => {
+  if (day === null) return []
   const year = currentDate.value.getFullYear()
   const month = currentDate.value.getMonth()
   const start = new Date(year, month, day, 0, 0, 0)
@@ -115,9 +145,28 @@ const openAdd = () => {
   dialogVisible.value = true
 }
 
+/** T1-3: 触发 iCal 文件下载 */
+const exportIcs = async () => {
+  try {
+    const res = await api.get('/events/export.ics', { responseType: 'blob' })
+    const blob = new Blob([res.data], { type: 'text/calendar' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'falltracker-interviews.ics'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    ElMessage.success('已导出 iCal 文件，可导入 Google / Apple / Outlook 日历')
+  } catch (e: any) {
+    ElMessage.error(extractErrorMessage(e, '导出失败'))
+  }
+}
+
 const saveEvent = async () => {
   try {
-    await axios.post(`${API_BASE}/deliveries/${editingEvent.value.delivery_id}/events`, {
+    await api.post(`/deliveries/${editingEvent.value.delivery_id}/events`, {
       event_type: editingEvent.value.event_type || 'interview',
       round_number: 1,
       scheduled_at: editingEvent.value.scheduled_at,
@@ -128,7 +177,7 @@ const saveEvent = async () => {
     dialogVisible.value = false
     fetchEvents()
   } catch (e: any) {
-    ElMessage.error(e.response?.data?.detail || '保存失败')
+    ElMessage.error(extractErrorMessage(e, '保存失败'))
   }
 }
 
@@ -144,17 +193,14 @@ onMounted(() => {
 
 <template>
   <div class="calendar-page">
-    <div class="page-header">
-      <h2>日历视图</h2>
-      <div class="header-actions">
-        <el-button-group>
-          <el-button :icon="ArrowLeft" @click="prevMonth" />
-          <el-button>{{ currentDate.getFullYear() }}年{{ currentDate.getMonth() + 1 }}月</el-button>
-          <el-button :icon="ArrowRight" @click="nextMonth" />
-        </el-button-group>
-        <el-button type="primary" :icon="Plus" @click="openAdd">新建事件</el-button>
-      </div>
-    </div>
+    <PageHeader title="日历视图">
+      <el-button-group>
+        <el-button :icon="ArrowLeft" @click="prevMonth" />
+        <el-button>{{ currentDate.getFullYear() }}年{{ currentDate.getMonth() + 1 }}月</el-button>
+        <el-button :icon="ArrowRight" @click="nextMonth" />
+      </el-button-group>
+      <el-button type="primary" :icon="Plus" @click="openAdd">新建事件</el-button>
+    </PageHeader>
 
     <div class="calendar-legend">
       <span class="legend-item"><span class="legend-dot" style="background-color: #3b82f6"></span>面试</span>
@@ -163,7 +209,26 @@ onMounted(() => {
       <span class="legend-item"><span class="legend-dot" style="background-color: #ef4444"></span>截止日期</span>
     </div>
 
-    <div class="calendar-grid">
+    <!-- N-BUG-5: 24h 内面试提醒条（顶部醒目提示，避免错过面试） -->
+    <el-alert
+      v-if="upcomingAlerts.length > 0"
+      :title="upcomingAlerts[0].title"
+      :description="upcomingAlerts[0].body"
+      type="warning"
+      :closable="false"
+      show-icon
+      class="interview-alert"
+    />
+
+    <el-empty
+      v-if="!loading && interviewEvents.length === 0 && deadlineEvents.length === 0"
+      description="本月暂无面试或截止日期"
+      :image-size="100"
+    >
+      <el-button type="primary" @click="openAdd">新建第一个事件</el-button>
+    </el-empty>
+
+    <div v-else class="calendar-grid">
       <div class="weekday-header" v-for="day in ['日', '一', '二', '三', '四', '五', '六']" :key="day">{{ day }}</div>
       <div
         v-for="(day, idx) in calendarDays"
@@ -174,7 +239,7 @@ onMounted(() => {
         <div v-if="day" class="day-number">{{ day }}</div>
         <div class="day-events">
           <div
-            v-for="evt in getEventsForDay(day || 0)"
+            v-for="evt in getEventsForDay(day)"
             :key="evt.id"
             class="event-chip"
             :class="{ 'deadline-chip': evt.extendedProps.event_type === 'deadline' }"
@@ -196,10 +261,12 @@ onMounted(() => {
         </el-form-item>
         <el-form-item label="类型">
           <el-select v-model="editingEvent.event_type" style="width: 100%">
-            <el-option label="笔试" value="written" />
-            <el-option label="面试" value="interview" />
-            <el-option label="HR面" value="hr" />
-            <el-option label="其他" value="other" />
+            <el-option
+              v-for="(label, value) in EVENT_TYPE_LABEL_MAP"
+              :key="value"
+              :label="label"
+              :value="value"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="时间">
@@ -220,24 +287,6 @@ onMounted(() => {
 <style scoped>
 .calendar-page {
   height: 100%;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
-
-.page-header h2 {
-  margin: 0;
-  font-size: 24px;
-  color: #1e3a5f;
-}
-
-.header-actions {
-  display: flex;
-  gap: 12px;
 }
 
 .calendar-legend {

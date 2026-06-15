@@ -3,9 +3,12 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
-import axios from 'axios'
+import api from '@/lib/api'
+import { STATUS_COLUMNS } from '@/lib/constants'
+import { formatDateTime } from '@/lib/format'
+import { extractErrorMessage } from '@/lib/error'
+import PageHeader from '@/components/PageHeader.vue'
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api'
 const router = useRouter()
 
 interface Delivery {
@@ -36,27 +39,17 @@ const editing = ref<Partial<Delivery>>({})
 // Drag state
 const draggedItem = ref<Delivery | null>(null)
 const dragOverColumn = ref<string | null>(null)
-let wasDragged = false
-
-const statusColumns = [
-  { key: 'pending', label: '待投递', color: '#94a3b8' },
-  { key: 'delivered', label: '已投递', color: '#3b82f6' },
-  { key: 'written', label: '笔试中', color: '#8b5cf6' },
-  { key: 'interview', label: '面试中', color: '#f59e0b' },
-  { key: 'offer', label: '已Offer', color: '#10b981' },
-  { key: 'rejected', label: '已终止', color: '#ef4444' },
-]
+// wasDragged 用 ref 暴露，便于 HMR 序列化与未来可观察
+const wasDragged = ref(false)
 
 // --- Drag & Drop handlers ---
 const onDragStart = (e: DragEvent, item: Delivery) => {
   draggedItem.value = item
-  wasDragged = false
-  // Set data for Firefox compatibility
+  wasDragged.value = false
   e.dataTransfer?.setData('text/plain', String(item.id))
   if (e.dataTransfer) {
     e.dataTransfer.effectAllowed = 'move'
   }
-  // Use requestAnimationFrame to let the browser render the drag image before adding the class
   requestAnimationFrame(() => {
     if (e.target instanceof HTMLElement) {
       e.target.classList.add('dragging')
@@ -65,7 +58,7 @@ const onDragStart = (e: DragEvent, item: Delivery) => {
 }
 
 const onDragEnd = (e: DragEvent) => {
-  wasDragged = true
+  wasDragged.value = true
   draggedItem.value = null
   dragOverColumn.value = null
   if (e.target instanceof HTMLElement) {
@@ -74,7 +67,6 @@ const onDragEnd = (e: DragEvent) => {
 }
 
 const onDragOver = (e: DragEvent, columnKey: string) => {
-  // Prevent default to allow drop
   e.preventDefault()
   if (e.dataTransfer) {
     e.dataTransfer.dropEffect = 'move'
@@ -82,8 +74,7 @@ const onDragOver = (e: DragEvent, columnKey: string) => {
   dragOverColumn.value = columnKey
 }
 
-const onDragLeave = (e: DragEvent, columnKey: string) => {
-  // Only clear if we're actually leaving the column (not entering a child)
+const onDragLeave = (_e: DragEvent, columnKey: string) => {
   if (dragOverColumn.value === columnKey) {
     dragOverColumn.value = null
   }
@@ -94,17 +85,13 @@ const onDrop = async (e: DragEvent, targetStatus: string) => {
   dragOverColumn.value = null
   const item = draggedItem.value
   if (!item) return
-
-  // Don't update if dropped in the same column
   if (item.status === targetStatus) return
-
   await updateStatus(item, targetStatus)
 }
 
 const onCardClick = (item: Delivery) => {
-  // If a drag just happened, treat as drag, not navigation
-  if (wasDragged) {
-    wasDragged = false
+  if (wasDragged.value) {
+    wasDragged.value = false
     return
   }
   router.push(`/delivery/${item.id}`)
@@ -112,7 +99,7 @@ const onCardClick = (item: Delivery) => {
 
 const groupedDeliveries = computed(() => {
   const map: Record<string, Delivery[]> = {}
-  for (const col of statusColumns) {
+  for (const col of STATUS_COLUMNS) {
     map[col.key] = deliveries.value.filter((d) => d.status === col.key)
   }
   return map
@@ -121,10 +108,10 @@ const groupedDeliveries = computed(() => {
 const fetchDeliveries = async () => {
   loading.value = true
   try {
-    const res = await axios.get(`${API_BASE}/deliveries`)
+    const res = await api.get('/deliveries')
     deliveries.value = res.data || []
   } catch (e: any) {
-    ElMessage.error(e.response?.data?.detail || '获取投递列表失败')
+    ElMessage.error(extractErrorMessage(e, '获取投递列表失败'))
   } finally {
     loading.value = false
   }
@@ -132,7 +119,7 @@ const fetchDeliveries = async () => {
 
 const fetchResumes = async () => {
   try {
-    const res = await axios.get(`${API_BASE}/resumes`)
+    const res = await api.get('/resumes')
     resumes.value = res.data || []
   } catch {
     // ignore
@@ -151,23 +138,23 @@ const saveDelivery = async () => {
   }
   try {
     if (editing.value.id) {
-      await axios.put(`${API_BASE}/deliveries/${editing.value.id}`, editing.value)
+      await api.put(`/deliveries/${editing.value.id}`, editing.value)
       ElMessage.success('更新成功')
     } else {
-      await axios.post(`${API_BASE}/deliveries`, editing.value)
+      await api.post('/deliveries', editing.value)
       ElMessage.success('添加成功')
     }
     dialogVisible.value = false
     fetchDeliveries()
   } catch (e: any) {
-    ElMessage.error(e.response?.data?.detail || '保存失败')
+    ElMessage.error(extractErrorMessage(e, '保存失败'))
   }
 }
 
 const deleteDelivery = async (id: number) => {
   try {
     await ElMessageBox.confirm('确定删除这条投递记录吗？', '提示', { type: 'warning' })
-    await axios.delete(`${API_BASE}/deliveries/${id}`)
+    await api.delete(`/deliveries/${id}`)
     ElMessage.success('删除成功')
     fetchDeliveries()
   } catch {
@@ -177,18 +164,12 @@ const deleteDelivery = async (id: number) => {
 
 const updateStatus = async (item: Delivery, newStatus: string) => {
   try {
-    await axios.put(`${API_BASE}/deliveries/${item.id}`, { status: newStatus })
+    await api.put(`/deliveries/${item.id}`, { status: newStatus })
     item.status = newStatus
     ElMessage.success('状态更新成功')
   } catch (e: any) {
-    ElMessage.error(e.response?.data?.detail || '更新失败')
+    ElMessage.error(extractErrorMessage(e, '更新失败'))
   }
-}
-
-const formatDate = (s: string) => {
-  if (!s) return '-'
-  const d = new Date(s)
-  return `${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 onMounted(() => {
@@ -199,14 +180,13 @@ onMounted(() => {
 
 <template>
   <div class="dashboard-page">
-    <div class="page-header">
-      <h2>投递大盘</h2>
+    <PageHeader title="投递大盘">
       <el-button type="primary" :icon="Plus" @click="openAdd">新增投递</el-button>
-    </div>
+    </PageHeader>
 
     <div v-loading="loading" class="kanban-board">
       <div
-        v-for="col in statusColumns"
+        v-for="col in STATUS_COLUMNS"
         :key="col.key"
         class="kanban-column"
         :class="{ 'drag-over': dragOverColumn === col.key }"
@@ -245,9 +225,9 @@ onMounted(() => {
               </el-button>
             </div>
             <div class="position">{{ item.position }}</div>
-            <div class="card-time">{{ formatDate(item.created_at) }}</div>
+            <div class="card-time">{{ formatDateTime(item.created_at) }}</div>
             <div v-if="item.deadline" class="card-deadline">
-              <span class="deadline-label">Deadline:</span> {{ formatDate(item.deadline) }}
+              <span class="deadline-label">Deadline:</span> {{ formatDateTime(item.deadline) }}
             </div>
             <div class="card-tags">
               <el-tag v-for="tag in item.tags" :key="tag" size="small" class="tag">{{ tag }}</el-tag>
@@ -267,7 +247,7 @@ onMounted(() => {
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="editing.status" placeholder="选择状态" style="width: 100%">
-            <el-option v-for="s in statusColumns" :key="s.key" :label="s.label" :value="s.key" />
+            <el-option v-for="s in STATUS_COLUMNS" :key="s.key" :label="s.label" :value="s.key" />
           </el-select>
         </el-form-item>
         <el-form-item label="标签">
@@ -314,19 +294,6 @@ onMounted(() => {
 <style scoped>
 .dashboard-page {
   height: 100%;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-}
-
-.page-header h2 {
-  margin: 0;
-  font-size: 24px;
-  color: #1e3a5f;
 }
 
 .kanban-board {

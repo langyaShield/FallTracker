@@ -50,7 +50,10 @@ def update_settings(
     current_user: User = Depends(get_current_user),
 ):
     s = get_user_settings(db, current_user.id)
-    for field, value in data.dict(exclude_unset=True).items():
+    for field, value in data.model_dump(exclude_unset=True).items():
+        # Skip masked API keys to avoid overwriting real key with asterisks
+        if field == "llm_api_key" and value and all(c == "*" for c in value):
+            continue
         setattr(s, field, value)
     db.commit()
     db.refresh(s)
@@ -89,9 +92,12 @@ def update_email_settings(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Update email SMTP settings."""
+    """Update email SMTP settings. Masked passwords (all asterisks) are ignored to prevent overwriting."""
     s = get_user_settings(db, current_user.id)
-    for field, value in data.dict(exclude_unset=True).items():
+    for field, value in data.model_dump(exclude_unset=True).items():
+        # Skip masked passwords to avoid overwriting real password with asterisks
+        if field == "smtp_password" and value and all(c == "*" for c in value):
+            continue
         setattr(s, field, value)
     db.commit()
     db.refresh(s)

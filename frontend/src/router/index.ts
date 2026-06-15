@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import { PUBLIC_PATHS } from '@/lib/constants'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -17,6 +18,11 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/layouts/MainLayout.vue'),
     redirect: '/dashboard',
     children: [
+      {
+        path: 'home',
+        name: 'home',
+        component: () => import('@/pages/HomePage.vue'),
+      },
       {
         path: 'dashboard',
         name: 'dashboard',
@@ -68,11 +74,12 @@ const router = createRouter({
 
 router.beforeEach((to, _from, next) => {
   const authStore = useAuthStore()
-  const publicPaths = ['/login', '/register']
-  if (!publicPaths.includes(to.path) && !authStore.token) {
-    next('/login')
-  } else if (publicPaths.includes(to.path) && authStore.token) {
+  const isPublic = (PUBLIC_PATHS as readonly string[]).includes(to.path)
+
+  if (isPublic && authStore.token) {
     next('/dashboard')
+  } else if (!isPublic && !authStore.token) {
+    next('/login')
   } else {
     next()
   }

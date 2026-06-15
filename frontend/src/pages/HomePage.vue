@@ -1,35 +1,20 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
-import axios from 'axios'
-import { TrendCharts, Calendar, Document, EditPen, Clock } from '@element-plus/icons-vue'
+import api from '@/lib/api'
+import { STATUS_LABEL_MAP, STATUS_COLOR_MAP, EVENT_TYPE_LABEL_MAP, EVENT_TYPE_COLOR_MAP } from '@/lib/constants'
+import { formatShortDateTime } from '@/lib/format'
+import { extractErrorMessage } from '@/lib/error'
+import { TrendCharts, Calendar, Document, EditPen } from '@element-plus/icons-vue'
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api'
 const router = useRouter()
 const authStore = useAuthStore()
 
 const stats = ref<Record<string, number>>({})
 const upcomingEvents = ref<any[]>([])
 const loading = ref(false)
-
-const statusLabels: Record<string, string> = {
-  pending: '待投递',
-  delivered: '已投递',
-  written: '笔试中',
-  interview: '面试中',
-  offer: '已Offer',
-  rejected: '已终止',
-}
-
-const statusColors: Record<string, string> = {
-  pending: '#94a3b8',
-  delivered: '#3b82f6',
-  written: '#8b5cf6',
-  interview: '#f59e0b',
-  offer: '#10b981',
-  rejected: '#ef4444',
-}
 
 const total = computed(() => Object.values(stats.value).reduce((a, b) => a + b, 0))
 const offerCount = computed(() => stats.value.offer || 0)
@@ -38,10 +23,11 @@ const interviewCount = computed(() => stats.value.interview || 0)
 const fetchStats = async () => {
   loading.value = true
   try {
-    const res = await axios.get(`${API_BASE}/statistics/funnel`)
+    const res = await api.get('/statistics/funnel')
     stats.value = res.data
-  } catch {
-    // ignore
+  } catch (e: unknown) {
+    // N-BUG-7: 不再静默吞错，提示用户感知加载失败
+    ElMessage.error(extractErrorMessage(e, '统计数据加载失败'))
   } finally {
     loading.value = false
   }
@@ -49,25 +35,13 @@ const fetchStats = async () => {
 
 const fetchUpcoming = async () => {
   try {
-    const res = await axios.get(`${API_BASE}/events`)
-    const now = new Date()
-    upcomingEvents.value = (res.data || [])
-      .filter((e: any) => new Date(e.scheduled_at) >= now)
-      .sort((a: any, b: any) => new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime())
-      .slice(0, 5)
-  } catch {
-    // ignore
+    // 后端配合：只返回未来的 5 条事件，避免拉全量后再 filter/sort/slice
+    // 对应 backend/app/routers/events.py: list_all_events(upcoming=true, limit=5)
+    const res = await api.get('/events', { params: { upcoming: true, limit: 5 } })
+    upcomingEvents.value = res.data || []
+  } catch (e: unknown) {
+    ElMessage.warning(extractErrorMessage(e, '即将面试加载失败'))
   }
-}
-
-const formatDate = (s: string) => {
-  const d = new Date(s)
-  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-}
-
-const eventTypeLabel = (t: string) => {
-  const map: Record<string, string> = { written: '笔试', interview: '面试', hr: 'HR面', other: '其他' }
-  return map[t] || t
 }
 
 onMounted(() => {
@@ -107,14 +81,14 @@ onMounted(() => {
           </div>
         </template>
         <div class="status-bars">
-          <div v-for="(label, key) in statusLabels" :key="key" class="status-row">
-            <span class="status-label">{{ label }}</span>
+          <div v-for="(_, key) in STATUS_LABEL_MAP" :key="key" class="status-row">
+            <span class="status-label">{{ STATUS_LABEL_MAP[key] }}</span>
             <div class="status-bar-bg">
               <div
                 class="status-bar-fill"
                 :style="{
                   width: total > 0 ? `${(stats[key] || 0) / total * 100}%` : '0%',
-                  backgroundColor: statusColors[key],
+                  backgroundColor: STATUS_COLOR_MAP[key],
                 }"
               />
             </div>
@@ -132,10 +106,10 @@ onMounted(() => {
         </template>
         <div v-if="upcomingEvents.length === 0" class="empty-hint">暂无即将到来的面试事件</div>
         <div v-for="evt in upcomingEvents" :key="evt.id" class="event-row">
-          <div class="event-dot" :style="{ backgroundColor: evt.event_type === 'interview' ? '#3b82f6' : evt.event_type === 'written' ? '#8b5cf6' : '#f59e0b' }" />
+          <div class="event-dot" :style="{ backgroundColor: EVENT_TYPE_COLOR_MAP[evt.event_type] || '#94a3b8' }" />
           <div class="event-info">
-            <div class="event-company">{{ evt.company || '未知公司' }} · {{ eventTypeLabel(evt.event_type) }}</div>
-            <div class="event-time">{{ formatDate(evt.scheduled_at) }} · {{ evt.duration_minutes }}分钟</div>
+            <div class="event-company">{{ evt.company || '未知公司' }} · {{ EVENT_TYPE_LABEL_MAP[evt.event_type] || evt.event_type }}</div>
+            <div class="event-time">{{ formatShortDateTime(evt.scheduled_at) }} · {{ evt.duration_minutes }}分钟</div>
           </div>
         </div>
       </el-card>

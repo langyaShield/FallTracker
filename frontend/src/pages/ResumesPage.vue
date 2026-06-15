@@ -2,17 +2,18 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Plus, Document, View, Delete, Edit, Search } from '@element-plus/icons-vue'
-import axios from 'axios'
-
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api'
+import api from '@/lib/api'
+import { formatDate } from '@/lib/format'
+import { extractErrorMessage } from '@/lib/error'
+import PageHeader from '@/components/PageHeader.vue'
 
 interface Resume {
   id: number
   name: string
   file_path: string
   ocr_text?: string | null
-  ocr_status: string  // pending / processing / done / failed
-  ocr_progress: number  // 0-100
+  ocr_status: string
+  ocr_progress: number
   created_at: string
 }
 
@@ -24,21 +25,17 @@ const fileList = ref<any[]>([])
 const previewUrl = ref('')
 const previewDialog = ref(false)
 
-// Rename state
 const renameDialog = ref(false)
 const renamingResume = ref<Partial<Resume>>({})
 
-// OCR text state
 const ocrDialog = ref(false)
 const ocrText = ref('')
 const ocrLoading = ref(false)
 
-// Search state
 const searchQuery = ref('')
-let searchTimer: any = null
+let searchTimer: ReturnType<typeof setTimeout> | null = null
 
-// Progress polling
-let pollTimer: any = null
+let pollTimer: ReturnType<typeof setInterval> | null = null
 
 const startPolling = () => {
   stopPolling()
@@ -59,8 +56,7 @@ const pollOcrStatus = async () => {
     return
   }
   try {
-    const ids = processing.map(r => r.id)
-    const res = await axios.get(`${API_BASE}/resumes`)
+    const res = await api.get('/resumes')
     const updated: Resume[] = res.data || []
     for (const r of resumes.value) {
       const u = updated.find((u: Resume) => u.id === r.id)
@@ -78,32 +74,31 @@ const pollOcrStatus = async () => {
 const fetchResumes = async () => {
   loading.value = true
   try {
-    const res = await axios.get(`${API_BASE}/resumes`)
+    const res = await api.get('/resumes')
     resumes.value = res.data || []
-    // Start polling if any resume is still processing
     if (resumes.value.some(r => r.ocr_status === 'processing' || r.ocr_status === 'pending')) {
       startPolling()
     }
   } catch (e: any) {
-    ElMessage.error(e.response?.data?.detail || '获取简历失败')
+    ElMessage.error(extractErrorMessage(e, '获取简历失败'))
   } finally {
     loading.value = false
   }
 }
 
 const handleSearch = () => {
-  clearTimeout(searchTimer)
+  clearTimeout(searchTimer!)
   searchTimer = setTimeout(async () => {
     if (!searchQuery.value.trim()) {
       fetchResumes()
       return
     }
     try {
-      const res = await axios.get(`${API_BASE}/resumes/search`, {
+      const res = await api.get('/resumes/search', {
         params: { q: searchQuery.value }
       })
       resumes.value = res.data || []
-    } catch (e: any) {
+    } catch {
       ElMessage.error('搜索失败')
     }
   }, 300)
@@ -123,7 +118,7 @@ const handleUpload = async () => {
   form.append('file', fileList.value[0].raw)
   form.append('name', resumeName.value)
   try {
-    await axios.post(`${API_BASE}/resumes`, form, {
+    await api.post('/resumes', form, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
     ElMessage.success('上传成功，OCR正在后台处理中...')
@@ -132,20 +127,20 @@ const handleUpload = async () => {
     resumeName.value = ''
     fetchResumes()
   } catch (e: any) {
-    ElMessage.error(e.response?.data?.detail || '上传失败')
+    ElMessage.error(extractErrorMessage(e, '上传失败'))
   }
 }
 
 const previewResume = async (id: number) => {
   try {
-    const res = await axios.get(`${API_BASE}/resumes/${id}/preview`, {
+    const res = await api.get(`/resumes/${id}/preview`, {
       responseType: 'blob',
     })
     const blob = new Blob([res.data], { type: 'application/pdf' })
     previewUrl.value = URL.createObjectURL(blob)
     previewDialog.value = true
   } catch (e: any) {
-    ElMessage.error(e.response?.data?.detail || '预览失败')
+    ElMessage.error(extractErrorMessage(e, '预览失败'))
   }
 }
 
@@ -158,15 +153,14 @@ const closePreview = () => {
 
 const deleteResume = async (id: number) => {
   try {
-    await axios.delete(`${API_BASE}/resumes/${id}`)
+    await api.delete(`/resumes/${id}`)
     ElMessage.success('删除成功')
     fetchResumes()
   } catch (e: any) {
-    ElMessage.error(e.response?.data?.detail || '删除失败')
+    ElMessage.error(extractErrorMessage(e, '删除失败'))
   }
 }
 
-// Rename
 const openRename = (resume: Resume) => {
   renamingResume.value = { ...resume }
   renameDialog.value = true
@@ -175,18 +169,17 @@ const openRename = (resume: Resume) => {
 const saveRename = async () => {
   if (!renamingResume.value.name) return
   try {
-    await axios.put(`${API_BASE}/resumes/${renamingResume.value.id}`, {
+    await api.put(`/resumes/${renamingResume.value.id}`, {
       name: renamingResume.value.name,
     })
     ElMessage.success('重命名成功')
     renameDialog.value = false
     fetchResumes()
   } catch (e: any) {
-    ElMessage.error(e.response?.data?.detail || '重命名失败')
+    ElMessage.error(extractErrorMessage(e, '重命名失败'))
   }
 }
 
-// OCR text view
 const viewOcrText = async (resume: Resume) => {
   if (resume.ocr_status !== 'done') {
     ElMessage.warning('OCR尚未完成，请稍候')
@@ -195,7 +188,7 @@ const viewOcrText = async (resume: Resume) => {
   ocrLoading.value = true
   ocrDialog.value = true
   try {
-    const res = await axios.get(`${API_BASE}/resumes/${resume.id}`)
+    const res = await api.get(`/resumes/${resume.id}`)
     ocrText.value = res.data.ocr_text || '暂无OCR文本'
   } catch {
     ocrText.value = '获取OCR文本失败'
@@ -224,33 +217,28 @@ const ocrStatusType = (status: string) => {
   }
 }
 
-const formatDate = (s: string) => {
-  if (!s) return '-'
-  const d = new Date(s)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
-
 onMounted(fetchResumes)
-onUnmounted(stopPolling)
+onUnmounted(() => {
+  stopPolling()
+  // 同步清理搜索防抖定时器，避免页面销毁后仍触发已卸载组件的状态变更
+  if (searchTimer) clearTimeout(searchTimer)
+})
 </script>
 
 <template>
   <div class="resumes-page">
-    <div class="page-header">
-      <h2>简历管理</h2>
-      <div class="header-right">
-        <el-input
-          v-model="searchQuery"
-          placeholder="搜索简历内容..."
-          clearable
-          :prefix-icon="Search"
-          @input="handleSearch"
-          @clear="clearSearch"
-          style="width: 280px; margin-right: 12px"
-        />
-        <el-button type="primary" :icon="Plus" @click="uploadDialog = true">上传简历</el-button>
-      </div>
-    </div>
+    <PageHeader title="简历管理">
+      <el-input
+        v-model="searchQuery"
+        placeholder="搜索简历内容..."
+        clearable
+        :prefix-icon="Search"
+        @input="handleSearch"
+        @clear="clearSearch"
+        style="width: 280px; margin-right: 12px"
+      />
+      <el-button type="primary" :icon="Plus" @click="uploadDialog = true">上传简历</el-button>
+    </PageHeader>
 
     <div v-loading="loading" class="resume-list">
       <el-card v-for="resume in resumes" :key="resume.id" class="resume-card">
@@ -262,7 +250,6 @@ onUnmounted(stopPolling)
           </div>
         </div>
 
-        <!-- OCR Status & Progress -->
         <div class="ocr-status-area">
           <div class="ocr-status-row">
             <el-tag :type="ocrStatusType(resume.ocr_status)" size="small">
@@ -273,14 +260,12 @@ onUnmounted(stopPolling)
           <el-progress
             v-if="resume.ocr_status === 'processing' || resume.ocr_status === 'pending'"
             :percentage="resume.ocr_progress"
-            :status="resume.ocr_status === 'processing' ? undefined : undefined"
             :stroke-width="6"
             :show-text="false"
             style="margin-top: 6px"
           />
         </div>
 
-        <!-- OCR text preview (only when done) -->
         <div v-if="resume.ocr_status === 'done' && resume.ocr_text" class="ocr-preview">
           {{ resume.ocr_text.slice(0, 150) }}{{ resume.ocr_text.length > 150 ? '...' : '' }}
         </div>
@@ -304,10 +289,10 @@ onUnmounted(stopPolling)
         <el-form-item label="简历名称">
           <el-input v-model="resumeName" placeholder="如：后端开发-字节跳动" />
         </el-form-item>
-        <el-form-item label="PDF文件">
+        <el-form-item label="简历文件">
           <el-upload
             v-model:file-list="fileList"
-            accept=".pdf"
+            accept=".pdf,.png,.jpg,.jpeg,.bmp,.tiff,.docx"
             :auto-upload="false"
             :limit="1"
           >
@@ -348,24 +333,6 @@ onUnmounted(stopPolling)
 <style scoped>
 .resumes-page {
   height: 100%;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-}
-
-.page-header h2 {
-  margin: 0;
-  font-size: 24px;
-  color: #1e3a5f;
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
 }
 
 .resume-list {

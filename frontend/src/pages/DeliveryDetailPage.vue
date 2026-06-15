@@ -3,9 +3,11 @@ import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, Plus, Edit, Delete, ChatDotRound, Document, Timer } from '@element-plus/icons-vue'
-import axios from 'axios'
+import api from '@/lib/api'
+import { STATUS_COLUMNS, EVENT_TYPE_OPTIONS, EVENT_TYPE_LABEL_MAP } from '@/lib/constants'
+import { formatDateTime } from '@/lib/format'
+import { extractErrorMessage } from '@/lib/error'
 
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api'
 const route = useRoute()
 const router = useRouter()
 
@@ -47,29 +49,15 @@ const loading = ref(false)
 const eventDialog = ref(false)
 const editingEvent = ref<Partial<InterviewEvent>>({})
 
-const eventTypeOptions = [
-  { label: '笔试', value: 'written' },
-  { label: '面试', value: 'interview' },
-  { label: 'HR面', value: 'hr' },
-  { label: '其他', value: 'other' },
-]
-
-const statusOptions = [
-  { label: '待投递', value: 'pending' },
-  { label: '已投递', value: 'delivered' },
-  { label: '笔试中', value: 'written' },
-  { label: '面试中', value: 'interview' },
-  { label: '已Offer', value: 'offer' },
-  { label: '已终止', value: 'rejected' },
-]
+const statusOptions = STATUS_COLUMNS.map((s) => ({ label: s.label, value: s.key }))
 
 const fetchDetail = async () => {
   loading.value = true
   try {
-    const res = await axios.get(`${API_BASE}/deliveries/${route.params.id}`)
+    const res = await api.get(`/deliveries/${route.params.id}`)
     delivery.value = res.data
   } catch (e: any) {
-    ElMessage.error(e.response?.data?.detail || '获取详情失败')
+    ElMessage.error(extractErrorMessage(e, '获取详情失败'))
   } finally {
     loading.value = false
   }
@@ -77,17 +65,30 @@ const fetchDetail = async () => {
 
 const fetchEvents = async () => {
   try {
-    const res = await axios.get(`${API_BASE}/deliveries/${route.params.id}/events`)
+    const res = await api.get(`/deliveries/${route.params.id}/events`)
     events.value = res.data
   } catch (e: any) {
-    ElMessage.error(e.response?.data?.detail || '获取事件失败')
+    ElMessage.error(extractErrorMessage(e, '获取事件失败'))
   }
 }
 
 const fetchResumes = async () => {
   try {
-    const res = await axios.get(`${API_BASE}/resumes`)
+    const res = await api.get('/resumes')
     resumes.value = res.data || []
+  } catch {
+    // ignore
+  }
+}
+
+/** N-BUG-1 修复：从全量投递聚合出已用过的标签作为 el-select-v2 的建议项 */
+const tagOptions = ref<{ value: string; label: string }[]>([])
+const fetchTagSuggestions = async () => {
+  try {
+    const res = await api.get('/deliveries')
+    const allTags = new Set<string>()
+    ;(res.data || []).forEach((d: Delivery) => (d.tags || []).forEach((t) => allTags.add(t)))
+    tagOptions.value = Array.from(allTags).map((t) => ({ value: t, label: t }))
   } catch {
     // ignore
   }
@@ -96,10 +97,10 @@ const fetchResumes = async () => {
 const saveDelivery = async () => {
   if (!delivery.value) return
   try {
-    await axios.put(`${API_BASE}/deliveries/${delivery.value.id}`, delivery.value)
+    await api.put(`/deliveries/${delivery.value.id}`, delivery.value)
     ElMessage.success('保存成功')
   } catch (e: any) {
-    ElMessage.error(e.response?.data?.detail || '保存失败')
+    ElMessage.error(extractErrorMessage(e, '保存失败'))
   }
 }
 
@@ -120,34 +121,28 @@ const openEventDialog = (event?: InterviewEvent) => {
 const saveEvent = async () => {
   try {
     if (editingEvent.value.id) {
-      await axios.put(`${API_BASE}/events/${editingEvent.value.id}`, editingEvent.value)
+      await api.put(`/events/${editingEvent.value.id}`, editingEvent.value)
       ElMessage.success('更新成功')
     } else {
-      await axios.post(`${API_BASE}/deliveries/${route.params.id}/events`, editingEvent.value)
+      await api.post(`/deliveries/${route.params.id}/events`, editingEvent.value)
       ElMessage.success('添加成功')
     }
     eventDialog.value = false
     fetchEvents()
   } catch (e: any) {
-    ElMessage.error(e.response?.data?.detail || '保存失败')
+    ElMessage.error(extractErrorMessage(e, '保存失败'))
   }
 }
 
 const deleteEvent = async (id: number) => {
   try {
     await ElMessageBox.confirm('确定删除该事件吗？', '提示', { type: 'warning' })
-    await axios.delete(`${API_BASE}/events/${id}`)
+    await api.delete(`/events/${id}`)
     ElMessage.success('删除成功')
     fetchEvents()
   } catch {
     // cancelled
   }
-}
-
-const formatDate = (s: string) => {
-  if (!s) return '-'
-  const d = new Date(s)
-  return `${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
 onMounted(() => {
@@ -162,7 +157,7 @@ onMounted(() => {
     <div class="detail-header">
       <el-button text :icon="ArrowLeft" @click="router.back()">返回</el-button>
       <h2>{{ delivery?.company }} - {{ delivery?.position }}</h2>
-      <span v-if="delivery?.created_at" class="detail-time">创建于 {{ formatDate(delivery.created_at) }}</span>
+      <span v-if="delivery?.created_at" class="detail-time">创建于 {{ formatDateTime(delivery.created_at) }}</span>
     </div>
 
     <div class="detail-body">
@@ -189,10 +184,11 @@ onMounted(() => {
             <el-form-item label="标签">
               <el-select-v2
                 v-model="delivery!.tags"
-                :options="[]"
+                :options="tagOptions"
                 allow-create
                 multiple
                 filterable
+                placeholder="选择或输入新标签"
                 style="width: 100%"
               />
             </el-form-item>
@@ -238,12 +234,12 @@ onMounted(() => {
             >
               <div class="event-item">
                 <div class="event-header">
-                  <span class="event-type">{{ eventTypeOptions.find((o) => o.value === evt.event_type)?.label }}</span>
+                  <span class="event-type">{{ EVENT_TYPE_LABEL_MAP[evt.event_type] || evt.event_type }}</span>
                   <span class="event-round">第{{ evt.round_number }}轮</span>
                   <el-button text size="small" :icon="Edit" @click="openEventDialog(evt)" />
                   <el-button text size="small" type="danger" :icon="Delete" @click="deleteEvent(evt.id)" />
                 </div>
-                <div class="event-time">{{ formatDate(evt.scheduled_at) }} · {{ evt.duration_minutes }}分钟</div>
+                <div class="event-time">{{ formatDateTime(evt.scheduled_at) }} · {{ evt.duration_minutes }}分钟</div>
                 <div v-if="evt.interviewer" class="event-meta">面试官：{{ evt.interviewer }}</div>
                 <div v-if="evt.location" class="event-meta">地点：{{ evt.location }}</div>
                 <div v-if="evt.meeting_link" class="event-meta">
@@ -262,7 +258,7 @@ onMounted(() => {
       <el-form label-width="80px">
         <el-form-item label="类型">
           <el-select v-model="editingEvent.event_type" style="width: 100%">
-            <el-option v-for="o in eventTypeOptions" :key="o.value" :label="o.label" :value="o.value" />
+            <el-option v-for="o in EVENT_TYPE_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
           </el-select>
         </el-form-item>
         <el-form-item label="轮次">

@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import axios from 'axios'
-
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api'
+import api from '@/lib/api'
+import { STATUS_COLUMNS } from '@/lib/constants'
+import { extractErrorMessage } from '@/lib/error'
+import PageHeader from '@/components/PageHeader.vue'
 
 const funnel = ref<Record<string, number>>({})
 const loading = ref(false)
@@ -11,23 +12,14 @@ const loading = ref(false)
 const fetchStatistics = async () => {
   loading.value = true
   try {
-    const res = await axios.get(`${API_BASE}/statistics/funnel`)
+    const res = await api.get('/statistics/funnel')
     funnel.value = res.data
   } catch (e: any) {
-    ElMessage.error(e.response?.data?.detail || '获取统计失败')
+    ElMessage.error(extractErrorMessage(e, '获取统计失败'))
   } finally {
     loading.value = false
   }
 }
-
-const stages = [
-  { key: 'pending', label: '待投递', color: '#94a3b8' },
-  { key: 'delivered', label: '已投递', color: '#3b82f6' },
-  { key: 'written', label: '笔试中', color: '#8b5cf6' },
-  { key: 'interview', label: '面试中', color: '#f59e0b' },
-  { key: 'offer', label: '已Offer', color: '#10b981' },
-  { key: 'rejected', label: '已终止', color: '#ef4444' },
-]
 
 const total = computed(() => {
   return Object.values(funnel.value).reduce((a, b) => a + b, 0)
@@ -35,13 +27,13 @@ const total = computed(() => {
 
 const conversionRates = computed(() => {
   const rates = []
-  for (let i = 1; i < stages.length; i++) {
-    const prev = funnel.value[stages[i - 1].key] || 0
-    const curr = funnel.value[stages[i].key] || 0
+  for (let i = 1; i < STATUS_COLUMNS.length; i++) {
+    const prev = funnel.value[STATUS_COLUMNS[i - 1].key] || 0
+    const curr = funnel.value[STATUS_COLUMNS[i].key] || 0
     if (prev > 0) {
       rates.push({
-        from: stages[i - 1].label,
-        to: stages[i].label,
+        from: STATUS_COLUMNS[i - 1].label,
+        to: STATUS_COLUMNS[i].label,
         rate: ((curr / prev) * 100).toFixed(1),
       })
     }
@@ -54,13 +46,11 @@ onMounted(fetchStatistics)
 
 <template>
   <div class="statistics-page">
-    <div class="page-header">
-      <h2>数据统计</h2>
-    </div>
+    <PageHeader title="数据统计" />
 
     <div v-loading="loading" class="stats-content">
       <div class="kpi-cards">
-        <el-card v-for="stage in stages" :key="stage.key" class="kpi-card">
+        <el-card v-for="stage in STATUS_COLUMNS" :key="stage.key" class="kpi-card">
           <div class="kpi-value" :style="{ color: stage.color }">{{ funnel[stage.key] || 0 }}</div>
           <div class="kpi-label">{{ stage.label }}</div>
         </el-card>
@@ -71,7 +61,7 @@ onMounted(fetchStatistics)
           <span>转化漏斗</span>
         </template>
         <div class="funnel-visual">
-          <div v-for="stage in stages" :key="stage.key" class="funnel-bar-wrapper">
+          <div v-for="stage in STATUS_COLUMNS" :key="stage.key" class="funnel-bar-wrapper">
             <div class="funnel-label">{{ stage.label }}</div>
             <div class="funnel-bar-bg">
               <div
@@ -108,19 +98,6 @@ onMounted(fetchStatistics)
 <style scoped>
 .statistics-page {
   height: 100%;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-}
-
-.page-header h2 {
-  margin: 0;
-  font-size: 24px;
-  color: #1e3a5f;
 }
 
 .stats-content {

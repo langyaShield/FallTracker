@@ -16,6 +16,7 @@ backend/*.egg-info/
 # Env files (use docker-compose env_file instead)
 backend/.env
 frontend/.env.development
+frontend/.env.production
 .env
 
 # OS

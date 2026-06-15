@@ -52,3 +52,6 @@ data/
 
 # Session logs
 sessions/
+
+# Internal multi-agent collaboration log (not for public repo)
+linkup.md

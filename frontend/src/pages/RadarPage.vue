@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import axios from 'axios'
-
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api'
+import api from '@/lib/api'
+import { formatLocaleDateTime } from '@/lib/format'
+import { extractErrorMessage } from '@/lib/error'
+import PageHeader from '@/components/PageHeader.vue'
+import RadarEmailSettings from '@/components/radar/RadarEmailSettings.vue'
 
 // ========== Types ==========
 interface CrawlerConfig {
@@ -61,10 +63,10 @@ const configSaving = ref(false)
 async function fetchConfigs() {
   configsLoading.value = true
   try {
-    const res = await axios.get(`${API_BASE}/radar/configs`)
+    const res = await api.get('/radar/configs')
     configs.value = res.data
   } catch (e: any) {
-    ElMessage.error(e.response?.data?.detail || '获取爬虫配置失败')
+    ElMessage.error(extractErrorMessage(e, '获取爬虫配置失败'))
   } finally {
     configsLoading.value = false
   }
@@ -102,16 +104,16 @@ async function saveConfig() {
   configSaving.value = true
   try {
     if (editingConfig.value) {
-      await axios.put(`${API_BASE}/radar/configs/${editingConfig.value.id}`, configForm.value)
+      await api.put(`/radar/configs/${editingConfig.value.id}`, configForm.value)
       ElMessage.success('配置已更新')
     } else {
-      await axios.post(`${API_BASE}/radar/configs`, configForm.value)
+      await api.post('/radar/configs', configForm.value)
       ElMessage.success('配置已创建')
     }
     configDialogVisible.value = false
     await fetchConfigs()
   } catch (e: any) {
-    ElMessage.error(e.response?.data?.detail || '保存失败')
+    ElMessage.error(extractErrorMessage(e, '保存失败'))
   } finally {
     configSaving.value = false
   }
@@ -124,7 +126,7 @@ async function deleteConfig(config: CrawlerConfig) {
       cancelButtonText: '取消',
       type: 'warning',
     })
-    await axios.delete(`${API_BASE}/radar/configs/${config.id}`)
+    await api.delete(`/radar/configs/${config.id}`)
     ElMessage.success('已删除')
     await fetchConfigs()
   } catch {
@@ -134,27 +136,25 @@ async function deleteConfig(config: CrawlerConfig) {
 
 async function runNow(config: CrawlerConfig) {
   try {
-    await axios.post(`${API_BASE}/radar/configs/${config.id}/run`)
+    await api.post(`/radar/configs/${config.id}/run`)
     ElMessage.success('爬虫已开始运行')
     await fetchConfigs()
   } catch (e: any) {
-    ElMessage.error(e.response?.data?.detail || '运行失败')
+    ElMessage.error(extractErrorMessage(e, '运行失败'))
   }
 }
 
 async function toggleActive(config: CrawlerConfig) {
   try {
-    await axios.put(`${API_BASE}/radar/configs/${config.id}`, { is_active: !config.is_active })
+    await api.put(`/radar/configs/${config.id}`, { is_active: !config.is_active })
     await fetchConfigs()
   } catch (e: any) {
-    ElMessage.error(e.response?.data?.detail || '操作失败')
+    ElMessage.error(extractErrorMessage(e, '操作失败'))
   }
 }
 
 function formatTime(t: string | null) {
-  if (!t) return '从未运行'
-  const d = new Date(t)
-  return d.toLocaleString('zh-CN')
+  return t ? formatLocaleDateTime(t) : '从未运行'
 }
 
 // ========== Results Tab ==========
@@ -174,10 +174,10 @@ async function onConfigSelect() {
   resultsConfigName.value = cfg?.name || ''
   resultsLoading.value = true
   try {
-    const res = await axios.get(`${API_BASE}/radar/configs/${selectedConfigId.value}/results?limit=50`)
+    const res = await api.get(`/radar/configs/${selectedConfigId.value}/results?limit=50`)
     results.value = res.data
   } catch (e: any) {
-    ElMessage.error(e.response?.data?.detail || '获取运行记录失败')
+    ElMessage.error(extractErrorMessage(e, '获取运行记录失败'))
   } finally {
     resultsLoading.value = false
   }
@@ -195,68 +195,17 @@ function analysisSummary(analysis: any): string {
 }
 
 // ========== Email Settings Tab ==========
-const emailSettings = ref<EmailSettings>({
-  smtp_server: '',
-  smtp_port: 587,
-  smtp_username: '',
-  smtp_password: '',
-  email_from: '',
-})
 const emailLoading = ref(false)
-const emailSaving = ref(false)
-const passwordMasked = ref(true)
-
-async function fetchEmailSettings() {
-  emailLoading.value = true
-  try {
-    const res = await axios.get(`${API_BASE}/settings/email`)
-    emailSettings.value = res.data
-    passwordMasked.value = !!res.data.smtp_password && res.data.smtp_password.includes('*')
-  } catch (e: any) {
-    ElMessage.error(e.response?.data?.detail || '获取邮箱配置失败')
-  } finally {
-    emailLoading.value = false
-  }
-}
-
-function onPasswordInput() {
-  passwordMasked.value = false
-}
-
-async function saveEmailSettings() {
-  emailSaving.value = true
-  try {
-    const payload: Record<string, any> = {
-      smtp_server: emailSettings.value.smtp_server,
-      smtp_port: emailSettings.value.smtp_port || 587,
-      smtp_username: emailSettings.value.smtp_username,
-      email_from: emailSettings.value.email_from,
-    }
-    if (!passwordMasked.value && emailSettings.value.smtp_password) {
-      payload.smtp_password = emailSettings.value.smtp_password
-    }
-    await axios.put(`${API_BASE}/settings/email`, payload)
-    ElMessage.success('邮箱配置已保存')
-    await fetchEmailSettings()
-  } catch (e: any) {
-    ElMessage.error(e.response?.data?.detail || '保存失败')
-  } finally {
-    emailSaving.value = false
-  }
-}
 
 // ========== Lifecycle ==========
 onMounted(() => {
   fetchConfigs()
-  fetchEmailSettings()
 })
 </script>
 
 <template>
   <div class="radar-page">
-    <div class="page-header">
-      <h2>爬虫雷达</h2>
-    </div>
+    <PageHeader title="爬虫雷达" />
 
     <el-tabs v-model="activeTab" class="radar-tabs">
       <!-- ========== Tab 1: 爬虫配置 ========== -->
@@ -432,43 +381,7 @@ onMounted(() => {
 
       <!-- ========== Tab 3: 邮箱配置 ========== -->
       <el-tab-pane label="邮箱配置" name="email">
-        <el-card v-loading="emailLoading" class="settings-card">
-          <template #header>
-            <span class="card-title">SMTP 邮箱配置</span>
-          </template>
-          <p class="card-desc">配置SMTP邮箱信息后，当爬虫匹配到目标时可以自动发送邮件通知。</p>
-
-          <el-form :model="emailSettings" label-width="140px" style="max-width: 520px; margin-top: 20px">
-            <el-form-item label="SMTP 服务器">
-              <el-input v-model="emailSettings.smtp_server" placeholder="smtp.qq.com" />
-            </el-form-item>
-            <el-form-item label="端口">
-              <el-input-number v-model="emailSettings.smtp_port" :min="1" :max="65535" />
-              <span class="form-tip">通常 587（TLS）或 465（SSL）</span>
-            </el-form-item>
-            <el-form-item label="用户名">
-              <el-input v-model="emailSettings.smtp_username" placeholder="your@email.com" />
-            </el-form-item>
-            <el-form-item label="密码">
-              <el-input
-                v-model="emailSettings.smtp_password"
-                type="password"
-                show-password
-                placeholder="输入SMTP密码/授权码"
-                @input="onPasswordInput"
-              />
-              <span class="form-tip">部分邮箱需使用授权码而非登录密码</span>
-            </el-form-item>
-            <el-form-item label="发件人邮箱">
-              <el-input v-model="emailSettings.email_from" placeholder="your@email.com" />
-            </el-form-item>
-            <el-form-item>
-              <el-button type="primary" :loading="emailSaving" @click="saveEmailSettings">
-                保存配置
-              </el-button>
-            </el-form-item>
-          </el-form>
-        </el-card>
+        <RadarEmailSettings v-model:loading="emailLoading" />
       </el-tab-pane>
     </el-tabs>
   </div>
@@ -477,13 +390,6 @@ onMounted(() => {
 <style scoped>
 .radar-page {
   padding: 0;
-}
-
-.page-header h2 {
-  font-size: 22px;
-  font-weight: 600;
-  color: #1e293b;
-  margin: 0 0 20px 0;
 }
 
 .radar-tabs {
@@ -561,20 +467,5 @@ onMounted(() => {
   overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-all;
-}
-
-.settings-card {
-  max-width: 680px;
-}
-
-.card-title {
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.card-desc {
-  font-size: 13px;
-  color: #64748b;
-  margin: 0;
 }
 </style>

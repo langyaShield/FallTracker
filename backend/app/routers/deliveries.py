@@ -11,12 +11,12 @@ router = APIRouter(prefix="/deliveries", tags=["deliveries"])
 
 @router.get("", response_model=List[DeliveryOut])
 def list_deliveries(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    return db.query(Delivery).filter(Delivery.user_id == current_user.id).all()
+    return db.query(Delivery).filter(Delivery.user_id == current_user.id).order_by(Delivery.created_at.desc()).all()
 
 
 @router.post("", response_model=DeliveryOut)
 def create_delivery(data: DeliveryCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    db_item = Delivery(**data.dict(), user_id=current_user.id)
+    db_item = Delivery(**data.model_dump(), user_id=current_user.id)
     db.add(db_item)
     db.commit()
     db.refresh(db_item)
@@ -36,7 +36,7 @@ def update_delivery(delivery_id: int, data: DeliveryUpdate, db: Session = Depend
     item = db.query(Delivery).filter(Delivery.id == delivery_id, Delivery.user_id == current_user.id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Delivery not found")
-    for field, value in data.dict(exclude_unset=True).items():
+    for field, value in data.model_dump(exclude_unset=True).items():
         setattr(item, field, value)
     db.commit()
     db.refresh(item)
@@ -66,7 +66,7 @@ def create_event(delivery_id: int, data: InterviewEventCreate, db: Session = Dep
     delivery = db.query(Delivery).filter(Delivery.id == delivery_id, Delivery.user_id == current_user.id).first()
     if not delivery:
         raise HTTPException(status_code=404, detail="Delivery not found")
-    db_item = InterviewEvent(**data.dict(), delivery_id=delivery_id)
+    db_item = InterviewEvent(**data.model_dump(), delivery_id=delivery_id)
     db.add(db_item)
     db.commit()
     db.refresh(db_item)

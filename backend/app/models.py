@@ -67,6 +67,11 @@ class Review(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+# === DEPRECATED: 未启用的模型（占位定义，N-BUG-2/3 标记） ===
+# 以下类已定义但无任何 router 引用。若要启用，参考需求分析者 T2-3。
+# 保留是为避免破坏潜在外部依赖（如旧数据库迁移脚本）。
+
+
 class RadarJob(Base):
     __tablename__ = "radar_jobs"
     id = Column(Integer, primary_key=True, index=True)
@@ -101,6 +106,28 @@ class UserSettings(Base):
     smtp_password = Column(String(500), nullable=True)
     email_from = Column(String(200), nullable=True)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class Notification(Base):
+    """T1-2 站内通知中心。
+
+    事件源：
+    - radar_hits: 雷达抓到匹配职位
+    - interview_reminder: 面试前 24h / 1h 提醒（由 scheduler 触发）
+    - crawler_failure: 爬虫执行失败
+    - system: 系统级通知（如密码已修改）
+
+    软删除：通过 is_read=True 标记已读（保留历史）
+    """
+    __tablename__ = "notifications"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    type = Column(String(50), nullable=False)
+    title = Column(String(200), nullable=False)
+    body = Column(Text, nullable=True)
+    link = Column(String(500), nullable=True)
+    is_read = Column(Boolean, default=False, index=True)
+    created_at = Column(DateTime, server_default=func.now(), index=True)
 
 
 # === Crawler System Models ===
