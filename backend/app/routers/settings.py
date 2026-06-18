@@ -5,6 +5,7 @@ from app.models import UserSettings, User
 from app.schemas import UserSettingsUpdate, UserSettingsOut, EmailSettingsUpdate, EmailSettingsOut
 from app.auth import get_current_user
 from app.config import settings
+from app.crypto import encrypt_value, decrypt_value
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -24,7 +25,7 @@ def get_llm_config(db: Session, user_id: int) -> dict:
     """Get effective LLM config: user settings with global fallback."""
     s = get_user_settings(db, user_id)
     return {
-        "llm_api_key": s.llm_api_key or settings.LLM_API_KEY,
+        "llm_api_key": decrypt_value(s.llm_api_key) or settings.LLM_API_KEY,
         "llm_api_base": s.llm_api_base or settings.LLM_API_BASE,
         "llm_model": s.llm_model or settings.LLM_MODEL,
     }
@@ -33,7 +34,7 @@ def get_llm_config(db: Session, user_id: int) -> dict:
 @router.get("", response_model=UserSettingsOut)
 def read_settings(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     s = get_user_settings(db, current_user.id)
-    key = s.llm_api_key
+    key = decrypt_value(s.llm_api_key)
     if key and len(key) > 4:
         key = "*" * (len(key) - 4) + key[-4:]
     return UserSettingsOut(
@@ -54,10 +55,13 @@ def update_settings(
         # Skip masked API keys to avoid overwriting real key with asterisks
         if field == "llm_api_key" and value and all(c == "*" for c in value):
             continue
+        # Encrypt sensitive fields before storage
+        if field == "llm_api_key" and value:
+            value = encrypt_value(value)
         setattr(s, field, value)
     db.commit()
     db.refresh(s)
-    key = s.llm_api_key
+    key = decrypt_value(s.llm_api_key)
     if key and len(key) > 4:
         key = "*" * (len(key) - 4) + key[-4:]
     return UserSettingsOut(
@@ -74,7 +78,7 @@ def update_settings(
 def read_email_settings(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Get email SMTP settings. Password is masked for security."""
     s = get_user_settings(db, current_user.id)
-    pwd = s.smtp_password
+    pwd = decrypt_value(s.smtp_password)
     if pwd and len(pwd) > 4:
         pwd = "*" * (len(pwd) - 4) + pwd[-4:]
     return EmailSettingsOut(
@@ -98,10 +102,13 @@ def update_email_settings(
         # Skip masked passwords to avoid overwriting real password with asterisks
         if field == "smtp_password" and value and all(c == "*" for c in value):
             continue
+        # Encrypt sensitive fields before storage
+        if field == "smtp_password" and value:
+            value = encrypt_value(value)
         setattr(s, field, value)
     db.commit()
     db.refresh(s)
-    pwd = s.smtp_password
+    pwd = decrypt_value(s.smtp_password)
     if pwd and len(pwd) > 4:
         pwd = "*" * (len(pwd) - 4) + pwd[-4:]
     return EmailSettingsOut(

@@ -53,7 +53,7 @@ async function fetchList() {
     items.value = res.data.items || []
     unreadCount.value = res.data.unread_count || 0
     total.value = res.data.total || 0
-  } catch (e: any) {
+  } catch (e: unknown) {
     ElMessage.error(extractErrorMessage(e, '获取通知失败'))
   } finally {
     loading.value = false
@@ -66,7 +66,7 @@ async function markAllRead() {
     unreadCount.value = 0
     items.value = items.value.map((n) => ({ ...n, is_read: true }))
     ElMessage.success('已全部标记为已读')
-  } catch (e: any) {
+  } catch (e: unknown) {
     ElMessage.error(extractErrorMessage(e, '操作失败'))
   }
 }
@@ -81,16 +81,13 @@ async function clearAll() {
   } catch {
     return
   }
-  // 逐条删除（接口未提供批量删除，简单实现）
   try {
-    for (const n of items.value) {
-      await api.delete(`/notifications/${n.id}`)
-    }
+    await api.delete('/notifications/batch')
     items.value = []
     unreadCount.value = 0
     total.value = 0
     ElMessage.success('已清空')
-  } catch (e: any) {
+  } catch (e: unknown) {
     ElMessage.error(extractErrorMessage(e, '清空失败'))
   }
 }

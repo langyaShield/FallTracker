@@ -73,7 +73,6 @@ def test_user(client):
     """Register a test user, return user + auth token."""
     payload = {
         "username": "testuser",
-        "email": "test@example.com",
         "password": "password123",
     }
     r = client.post("/api/auth/register", json=payload)

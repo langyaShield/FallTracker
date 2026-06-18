@@ -43,12 +43,74 @@ def check_and_run_due_crawlers() -> None:
         db.close()
 
 
+def notify_upcoming_deadlines() -> None:
+    """为未来 48h 内到期的投递创建 deadline_warning 通知。
+
+    去重策略：同用户 + 同投递 ID 标题 + 24h 内已有通知 → 跳过。
+    """
+    from app.services.notification_service import create_notification
+
+    db = SessionLocal()
+    try:
+        now = datetime.now(timezone.utc)
+        horizon = now + timedelta(hours=48)
+        due_deliveries = (
+            db.query(Delivery)
+            .filter(
+                Delivery.deadline >= now,
+                Delivery.deadline <= horizon,
+                Delivery.status.notin_(["offer", "rejected"]),
+            )
+            .all()
+        )
+        window_start = now - timedelta(hours=24)
+        for delivery in due_deliveries:
+            # Deduplicate: same user + same delivery + 24h window
+            exists = (
+                db.query(Notification)
+                .filter(
+                    Notification.user_id == delivery.user_id,
+                    Notification.type == "deadline_warning",
+                    Notification.title.contains(delivery.company),
+                    Notification.created_at >= window_start,
+                )
+                .first()
+            )
+            if exists:
+                continue
+
+            delta = delivery.deadline - now
+            total_seconds = int(delta.total_seconds())
+            if total_seconds <= 0:
+                continue
+            hours = total_seconds // 3600
+            days = hours // 24
+            remain_hours = hours % 24
+            if days > 0:
+                when = f"{days}天{remain_hours}小时"
+            else:
+                when = f"{hours}小时"
+
+            create_notification(
+                db=db,
+                user_id=delivery.user_id,
+                type_="deadline_warning",
+                title=f"⏰ 截止提醒: {delivery.company} - {delivery.position}",
+                body=f"将于 {when} 后截止",
+                link=f"/delivery/{delivery.id}",
+            )
+    except Exception as e:
+        logger.exception("notify_upcoming_deadlines failed: %s", e)
+    finally:
+        db.close()
+
+
 def notify_upcoming_interviews() -> None:
     """T1-2 面试提醒：为未来 24h 内开始的面试创建站内通知。
 
     去重策略：title contains "{company} - {position}" 且 created_at 在过去 1h 内 → 跳过。
     """
-    from app.routers.notifications import create_notification
+    from app.services.notification_service import create_notification
 
     db = SessionLocal()
     try:

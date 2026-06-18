@@ -11,7 +11,6 @@ def _create(client, auth_headers, **overrides):
         "company": "Acme",
         "position": "Backend Engineer",
         "link": "https://example.com",
-        "status": "applied",
     }
     payload.update(overrides)
     r = client.post("/api/deliveries", json=payload, headers=auth_headers)
@@ -36,7 +35,7 @@ def test_create_delivery_minimal(client, auth_headers):
     data = r.json()
     assert data["company"] == "X"
     assert data["position"] == "Y"
-    assert data["status"] == "applied"  # default
+    assert data["status"] == "pending"  # default
 
 
 def test_create_delivery_with_tags(client, auth_headers):
@@ -77,8 +76,7 @@ def test_user_isolation(client, auth_headers, db_session):
     try:
         other = User(
             username="other",
-            email="other@example.com",
-            hashed_password=get_password_hash("otherpass1"),
+            password_hash=get_password_hash("otherpass1"),
         )
         db.add(other)
         db.commit()

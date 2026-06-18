@@ -67,31 +67,6 @@ class Review(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
-# === DEPRECATED: 未启用的模型（占位定义，N-BUG-2/3 标记） ===
-# 以下类已定义但无任何 router 引用。若要启用，参考需求分析者 T2-3。
-# 保留是为避免破坏潜在外部依赖（如旧数据库迁移脚本）。
-
-
-class RadarJob(Base):
-    __tablename__ = "radar_jobs"
-    id = Column(Integer, primary_key=True, index=True)
-    source = Column(String(50), nullable=False)
-    company = Column(String(100), nullable=False)
-    position = Column(String(100), nullable=False)
-    link = Column(String(500), nullable=False)
-    md5_hash = Column(String(32), unique=True, nullable=False)
-    tags = Column(JSON, default=list)
-    created_at = Column(DateTime, server_default=func.now())
-
-
-class RadarFilter(Base):
-    __tablename__ = "radar_filters"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    tags = Column(JSON, default=list)
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
-
-
 class UserSettings(Base):
     __tablename__ = "user_settings"
     id = Column(Integer, primary_key=True, index=True)

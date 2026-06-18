@@ -10,7 +10,6 @@ def test_register_login_flow(client):
     """User can register, log in, and access a protected endpoint."""
     payload = {
         "username": "alice",
-        "email": "alice@example.com",
         "password": "AlicePass123",
     }
     r = client.post("/api/auth/register", json=payload)
@@ -36,14 +35,12 @@ def test_register_duplicate_username(client):
     """Registering the same username twice should fail with 4xx."""
     payload = {
         "username": "bob",
-        "email": "bob1@example.com",
         "password": "BobPass123",
     }
     r1 = client.post("/api/auth/register", json=payload)
     assert r1.status_code == 200
 
-    # Try with same username but different email
-    payload["email"] = "bob2@example.com"
+    # Try with same username again
     r2 = client.post("/api/auth/register", json=payload)
     assert r2.status_code in (400, 409, 422)
 
@@ -52,7 +49,6 @@ def test_login_wrong_password(client):
     """Login with wrong password returns 401."""
     payload = {
         "username": "carol",
-        "email": "carol@example.com",
         "password": "CarolPass123",
     }
     r = client.post("/api/auth/register", json=payload)

@@ -1,14 +1,16 @@
-import sqlite3, os, logging, warnings
+import sqlite3, os, logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from slowapi.errors import RateLimitExceeded
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.staticfiles import StaticFiles
 from app.config import settings
 from app.database import engine, Base
+from app.ratelimit import limiter
 from app.routers import auth, deliveries, events, resumes, reviews, radar, statistics, settings as settings_router, notifications
 
 logger = logging.getLogger("falltracker")
@@ -79,57 +81,54 @@ _add_column_if_not_exists("user_settings", "smtp_username", "VARCHAR(200)")
 _add_column_if_not_exists("user_settings", "smtp_password", "VARCHAR(500)")
 _add_column_if_not_exists("user_settings", "email_from", "VARCHAR(200)")
 
-# Security warning for default SECRET_KEY
+# Security: block startup with default SECRET_KEY
 if settings.SECRET_KEY == "change-me-to-a-random-secret-key":
-    warnings.warn(
-        "SECURITY WARNING: Using default SECRET_KEY. "
-        "Please set a strong random SECRET_KEY in .env for production!",
-        stacklevel=1,
+    raise RuntimeError(
+        "SECURITY ERROR: Using default SECRET_KEY is not allowed. "
+        "Please set a strong random SECRET_KEY in .env before starting the application."
     )
-    logger.warning("Using default SECRET_KEY — not safe for production!")
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: start crawler scheduler
-    import threading, time
-
     # 在测试环境下不启动后台调度器（避免测试 DB 表不存在导致启动失败）
     if os.environ.get("PYTEST_CURRENT_TEST"):
         yield
         return
 
-    def _scheduler_loop():
-        tick_count = 0
-        while True:
-            try:
-                from app.routers.radar import check_and_run_due_crawlers
-                check_and_run_due_crawlers()
-            except Exception as e:
-                # 记录到日志便于排查，但不影响后续轮询
-                logger.warning(f"Crawler scheduler tick failed: {e}", exc_info=True)
-            # T1-2: 面试提醒 tick 频率可低于爬虫调度（每 10 分钟一次）
-            tick_count += 1
-            if tick_count % 10 == 0:
-                try:
-                    from app.services.radar.scheduler import notify_upcoming_interviews
-                    notify_upcoming_interviews()
-                except Exception as e:
-                    logger.warning(f"Interview reminder tick failed: {e}", exc_info=True)
-            time.sleep(60)
+    from apscheduler.schedulers.background import BackgroundScheduler
+    from app.services.radar.scheduler import (
+        check_and_run_due_crawlers,
+        notify_upcoming_interviews,
+        notify_upcoming_deadlines,
+    )
 
-    t = threading.Thread(target=_scheduler_loop, daemon=True)
-    t.start()
+    scheduler = BackgroundScheduler(daemon=True)
+    # 爬虫调度：每 60 秒检查一次到期的爬虫配置
+    scheduler.add_job(check_and_run_due_crawlers, "interval", seconds=60, id="crawler_tick")
+    # 面试提醒：每 10 分钟检查一次即将开始的面试
+    scheduler.add_job(notify_upcoming_interviews, "interval", minutes=10, id="interview_reminder")
+    # 截止日期预警：每小时检查一次 48h 内到期的投递
+    scheduler.add_job(notify_upcoming_deadlines, "interval", hours=1, id="deadline_warning")
+    scheduler.start()
+
     yield
-    # Shutdown: cleanup if needed
+
+    scheduler.shutdown(wait=False)
 
 
 app = FastAPI(title="FallTracker API", version="1.0.0", lifespan=lifespan)
+app.state.limiter = limiter
 
 
 # ─────────────────────────────────────────────
 #  Global Exception Handlers (B-11)
 # ─────────────────────────────────────────────
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(status_code=429, content={"detail": "请求过于频繁，请稍后再试"})
+
+
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
     """Pydantic 校验错误：保留 422 + 原始错误结构（前端 extractErrorMessage 需要 detail 数组）"""
@@ -149,10 +148,14 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     )
 
 
+# CORS: disable credentials when origins is wildcard (browser spec requirement)
+_cors_origins = settings.cors_origins_list
+_allow_credentials = _cors_origins != ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )

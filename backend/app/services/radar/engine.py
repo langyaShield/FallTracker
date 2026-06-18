@@ -86,7 +86,7 @@ def execute_crawler(config_id: int) -> None:
         # 6. T1-2: 雷达命中 → 站内通知（即使邮件失败也会创建）
         if target_found:
             try:
-                from app.routers.notifications import create_notification
+                from app.services.notification_service import create_notification
                 summary = analysis.get("summary", "")[:120]
                 create_notification(
                     db=db,
@@ -105,7 +105,7 @@ def execute_crawler(config_id: int) -> None:
         logger.exception("Crawler execution failed for config_id=%s: %s", config_id, e)
         # T1-2: 爬虫失败 → 站内通知
         try:
-            from app.routers.notifications import create_notification
+            from app.services.notification_service import create_notification
             create_notification(
                 db=db,
                 user_id=_get_user_id_safe(config_id),

@@ -43,3 +43,23 @@ export const EVENT_TYPE_COLOR_MAP: Record<string, string> = {
 /** 公共路径（无需鉴权/不触发 401 跳转）。api.ts 与 router 共享同一份真源。 */
 export const PUBLIC_PATHS = ['/login', '/register'] as const
 export type PublicPath = (typeof PUBLIC_PATHS)[number]
+
+/** CSV 导入表头映射：中文 -> 英文字段名 */
+export const CSV_HEADER_MAP: Record<string, string> = {
+  公司: 'company',
+  company: 'company',
+  岗位: 'position',
+  position: 'position',
+  状态: 'status',
+  status: 'status',
+  链接: 'link',
+  JD链接: 'link',
+  link: 'link',
+  标签: 'tags',
+  tags: 'tags',
+  截止日期: 'deadline',
+  deadline: 'deadline',
+  JD描述: 'jd_text',
+  jd_text: 'jd_text',
+  描述: 'jd_text',
+}

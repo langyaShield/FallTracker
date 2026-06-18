@@ -11,6 +11,7 @@ import smtplib
 from email.mime.text import MIMEText
 from typing import Any, Dict, Optional
 
+from app.crypto import decrypt_value
 from app.database import SessionLocal
 from app.models import UserSettings
 
@@ -28,7 +29,7 @@ def get_email_config(user_id: int) -> Optional[Dict[str, Any]]:
             "server": s.smtp_server,
             "port": s.smtp_port or 587,
             "username": s.smtp_username or "",
-            "password": s.smtp_password or "",
+            "password": decrypt_value(s.smtp_password) or "",
             "from_addr": s.email_from,
         }
     finally:

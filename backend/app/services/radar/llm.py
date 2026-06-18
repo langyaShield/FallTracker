@@ -13,6 +13,7 @@ from typing import Any, Dict, Optional
 import httpx
 
 from app.config import settings as global_settings
+from app.crypto import decrypt_value
 from app.database import SessionLocal
 from app.models import UserSettings
 from app.services.radar.fetcher import MAX_RAW_TEXT_CHARS  # noqa: F401  (re-export)
@@ -35,7 +36,7 @@ def fetch_user_llm_config(user_id: int) -> Dict[str, Optional[str]]:
         db.close()
 
     return {
-        "llm_api_key": (s.llm_api_key if s and s.llm_api_key else global_settings.LLM_API_KEY) or "",
+        "llm_api_key": (decrypt_value(s.llm_api_key) if s and s.llm_api_key else global_settings.LLM_API_KEY) or "",
         "llm_api_base": (s.llm_api_base if s and s.llm_api_base else global_settings.LLM_API_BASE) or "",
         "llm_model": (s.llm_model if s and s.llm_model else global_settings.LLM_MODEL) or "",
     }

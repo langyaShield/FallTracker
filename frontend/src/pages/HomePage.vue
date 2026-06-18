@@ -14,6 +14,7 @@ const authStore = useAuthStore()
 
 const stats = ref<Record<string, number>>({})
 const upcomingEvents = ref<any[]>([])
+const urgentDeadlines = ref<any[]>([])
 const loading = ref(false)
 
 const total = computed(() => Object.values(stats.value).reduce((a, b) => a + b, 0))
@@ -35,8 +36,6 @@ const fetchStats = async () => {
 
 const fetchUpcoming = async () => {
   try {
-    // 后端配合：只返回未来的 5 条事件，避免拉全量后再 filter/sort/slice
-    // 对应 backend/app/routers/events.py: list_all_events(upcoming=true, limit=5)
     const res = await api.get('/events', { params: { upcoming: true, limit: 5 } })
     upcomingEvents.value = res.data || []
   } catch (e: unknown) {
@@ -44,9 +43,43 @@ const fetchUpcoming = async () => {
   }
 }
 
+const fetchUrgentDeadlines = async () => {
+  try {
+    const res = await api.get('/deliveries/upcoming-deadlines', { params: { days: 7 } })
+    urgentDeadlines.value = res.data || []
+  } catch (e: unknown) {
+    // non-critical, silent fail
+  }
+}
+
+const getDeadlineUrgency = (deadline: string): 'expired' | 'urgent' | 'warning' | 'normal' => {
+  if (!deadline) return 'normal'
+  const now = new Date()
+  const dl = new Date(deadline)
+  const diffMs = dl.getTime() - now.getTime()
+  const diffHours = diffMs / (1000 * 60 * 60)
+  if (diffMs < 0) return 'expired'
+  if (diffHours <= 24) return 'urgent'
+  if (diffHours <= 48) return 'warning'
+  return 'normal'
+}
+
+const formatCountdown = (deadline: string): string => {
+  const now = new Date()
+  const dl = new Date(deadline)
+  const diffMs = dl.getTime() - now.getTime()
+  if (diffMs < 0) return '已过期'
+  const totalHours = Math.floor(diffMs / (1000 * 60 * 60))
+  const days = Math.floor(totalHours / 24)
+  const hours = totalHours % 24
+  if (days > 0) return `还剩 ${days}天${hours}小时`
+  return `还剩 ${hours}小时`
+}
+
 onMounted(() => {
   fetchStats()
   fetchUpcoming()
+  fetchUrgentDeadlines()
 })
 </script>
 
@@ -70,6 +103,37 @@ onMounted(() => {
         <div class="kpi-value" style="color: #10b981">{{ offerCount }}</div>
         <div class="kpi-label">已Offer</div>
       </el-card>
+    </div>
+
+    <!-- 紧急截止日期预警 -->
+    <div v-if="urgentDeadlines.length > 0" class="deadline-section">
+      <div class="deadline-header">
+        <span class="deadline-title">⏰ 即将到期的投递</span>
+        <el-tag size="small" type="danger">{{ urgentDeadlines.length }} 条</el-tag>
+      </div>
+      <div class="deadline-list">
+        <div
+          v-for="item in urgentDeadlines"
+          :key="item.id"
+          class="deadline-item"
+          :class="'deadline-' + getDeadlineUrgency(item.deadline)"
+          @click="router.push(`/delivery/${item.id}`)"
+        >
+          <div class="deadline-info">
+            <span class="deadline-company">{{ item.company }}</span>
+            <span class="deadline-position">· {{ item.position }}</span>
+          </div>
+          <div class="deadline-countdown">
+            <el-tag
+              :type="getDeadlineUrgency(item.deadline) === 'expired' ? 'danger' : getDeadlineUrgency(item.deadline) === 'urgent' ? 'danger' : 'warning'"
+              size="small"
+              effect="plain"
+            >
+              {{ formatCountdown(item.deadline) }}
+            </el-tag>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="content-grid">
@@ -270,5 +334,84 @@ onMounted(() => {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
+}
+
+/* Deadline urgency section */
+.deadline-section {
+  margin-bottom: 24px;
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.deadline-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.deadline-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.deadline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.deadline-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  border-left: 4px solid transparent;
+}
+
+.deadline-item:hover {
+  background: #f8fafc;
+}
+
+.deadline-item.deadline-expired {
+  border-left-color: #991b1b;
+  background: #fef2f2;
+}
+
+.deadline-item.deadline-urgent {
+  border-left-color: #ef4444;
+  background: #fff5f5;
+}
+
+.deadline-item.deadline-warning {
+  border-left-color: #f97316;
+  background: #fffbeb;
+}
+
+.deadline-item.deadline-normal {
+  border-left-color: #f59e0b;
+}
+
+.deadline-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.deadline-company {
+  font-weight: 600;
+  font-size: 14px;
+  color: #1e3a5f;
+}
+
+.deadline-position {
+  font-size: 13px;
+  color: #64748b;
 }
 </style>

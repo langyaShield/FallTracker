@@ -201,36 +201,6 @@ class ReviewOut(BaseModel):
         from_attributes = True
 
 
-# === DEPRECATED: 未启用的 Schema（N-BUG-4 标记） ===
-# 以下类已定义但无任何 router 引用。若要启用，参考需求分析者 T2-3。
-# 保留是为避免破坏潜在外部依赖。
-
-
-class RadarJobOut(BaseModel):
-    id: int
-    source: str
-    company: str
-    position: str
-    link: str
-    tags: Optional[List[str]]
-    created_at: datetime
-    class Config:
-        from_attributes = True
-
-
-class RadarFilterUpdate(BaseModel):
-    tags: List[str]
-
-
-class RadarFilterOut(BaseModel):
-    id: int
-    user_id: int
-    tags: Optional[List[str]]
-    updated_at: datetime
-    class Config:
-        from_attributes = True
-
-
 # --- Quick Import & Manual Add Schemas ---
 
 
@@ -391,3 +361,40 @@ class EmailSettingsOut(BaseModel):
     email_from: Optional[str] = None
     class Config:
         from_attributes = True
+
+
+# === CSV Import/Export Schemas ===
+
+
+class ImportPreviewResponse(BaseModel):
+    headers: List[str]
+    rows: List[dict]
+    total: int
+
+
+class ImportResponse(BaseModel):
+    created: int
+    skipped: int
+    errors: List[str]
+
+
+class BatchStatusUpdate(BaseModel):
+    ids: List[int]
+    status: str
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v):
+        if v not in VALID_DELIVERY_STATUSES:
+            raise ValueError(f"无效的状态值: {v}")
+        return v
+
+
+class BatchTagsUpdate(BaseModel):
+    ids: List[int]
+    add_tags: List[str] = []
+    remove_tags: List[str] = []
+
+
+class BatchIdsRequest(BaseModel):
+    ids: List[int]

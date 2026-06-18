@@ -175,9 +175,23 @@ def delete_resume(resume_id: int, db: Session = Depends(get_db), current_user: U
     return {"ok": True}
 
 
+_MIME_TYPES = {
+    ".pdf": "application/pdf",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".bmp": "image/bmp",
+    ".tiff": "image/tiff",
+    ".tif": "image/tiff",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+
+
 @router.get("/{resume_id}/preview")
 def preview_resume(resume_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     item = db.query(Resume).filter(Resume.id == resume_id, Resume.user_id == current_user.id).first()
     if not item or not os.path.exists(item.file_path):
         raise HTTPException(status_code=404, detail="Resume not found")
-    return FileResponse(item.file_path, media_type="application/pdf")
+    ext = os.path.splitext(item.file_path)[1].lower()
+    media_type = _MIME_TYPES.get(ext, "application/octet-stream")
+    return FileResponse(item.file_path, media_type=media_type)

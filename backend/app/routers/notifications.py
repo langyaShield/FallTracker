@@ -6,6 +6,7 @@ T1-2: 站内通知中心 API。
 - GET /api/notifications/unread-count   仅取未读数（轻量，轮询友好）
 - POST /api/notifications/mark-read    批量标记已读
 - DELETE /api/notifications/{id}      删除单条通知
+- DELETE /api/notifications           批量删除全部通知
 """
 from __future__ import annotations
 
@@ -92,6 +93,21 @@ def mark_read(
     return {"updated": updated}
 
 
+@router.delete("/batch")
+def batch_delete_notifications(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete all notifications for the current user."""
+    deleted = (
+        db.query(Notification)
+        .filter(Notification.user_id == current_user.id)
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return {"deleted": deleted}
+
+
 @router.delete("/{notification_id}")
 def delete_notification(
     notification_id: int,
@@ -109,38 +125,3 @@ def delete_notification(
     db.delete(n)
     db.commit()
     return {"detail": "已删除"}
-
-
-# === Service helpers (供其他模块触发通知) ===
-
-
-def create_notification(
-    db: Session,
-    user_id: int,
-    type_: str,
-    title: str,
-    body: str = None,
-    link: str = None,
-) -> Notification:
-    """Insert a notification. Used by radar engine, scheduler, etc.
-
-    失败时仅 logger.warning 而不抛异常，避免阻塞主流程（如爬虫成功/失败记录）。
-    """
-    try:
-        n = Notification(
-            user_id=user_id,
-            type=type_,
-            title=title,
-            body=body,
-            link=link,
-        )
-        db.add(n)
-        db.commit()
-        db.refresh(n)
-        return n
-    except Exception:
-        try:
-            db.rollback()
-        except Exception:
-            pass
-        return None
