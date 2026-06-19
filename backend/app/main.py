@@ -74,6 +74,8 @@ _add_column_if_not_exists("deliveries", "deadline", "DATETIME")
 _add_column_if_not_exists("resumes", "ocr_text", "TEXT")
 _add_column_if_not_exists("resumes", "ocr_status", "VARCHAR(20) DEFAULT 'pending'")
 _add_column_if_not_exists("resumes", "ocr_progress", "INTEGER DEFAULT 0")
+_add_column_if_not_exists("resumes", "file_size", "INTEGER DEFAULT 0")
+_add_column_if_not_exists("resumes", "file_type", "VARCHAR(20) DEFAULT ''")
 # Patch new columns into existing user_settings table
 _add_column_if_not_exists("user_settings", "smtp_server", "VARCHAR(200)")
 _add_column_if_not_exists("user_settings", "smtp_port", "INTEGER")

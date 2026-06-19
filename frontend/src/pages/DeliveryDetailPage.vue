@@ -75,7 +75,7 @@ const fetchEvents = async () => {
 const fetchResumes = async () => {
   try {
     const res = await api.get('/resumes')
-    resumes.value = res.data || []
+    resumes.value = res.data?.items || []
   } catch {
     // ignore
   }

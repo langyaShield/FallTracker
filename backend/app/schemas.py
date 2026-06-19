@@ -168,12 +168,19 @@ class ResumeOut(BaseModel):
     user_id: int
     name: str
     file_path: str
+    file_size: int = 0
+    file_type: str = ""
     ocr_text: Optional[str] = None
     ocr_status: str = "pending"
     ocr_progress: int = 0
     created_at: datetime
     class Config:
         from_attributes = True
+
+
+class ResumeListOut(BaseModel):
+    items: List[ResumeOut]
+    total: int
 
 
 class ReviewCreate(BaseModel):

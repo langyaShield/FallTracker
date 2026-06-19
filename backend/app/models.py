@@ -48,6 +48,8 @@ class Resume(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(100), nullable=False)
     file_path = Column(String(500), nullable=False)
+    file_size = Column(Integer, default=0)  # 文件大小（字节）
+    file_type = Column(String(20), default="")  # 文件扩展名
     ocr_text = Column(Text, nullable=True)
     ocr_status = Column(String(20), default="pending")  # pending / processing / done / failed
     ocr_progress = Column(Integer, default=0)  # 0-100

@@ -11,8 +11,9 @@ Crawler / radar HTTP endpoints.
 本文件仅保留 HTTP 路由层：参数解析 / 鉴权 / 数据库 CRUD / 派发到后台任务。
 re-export `check_and_run_due_crawlers` 与 `execute_crawler` 以保持 main.py 与历史调用方不变。
 """
-from datetime import datetime, timezone
-from typing import List
+import json
+import os
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -32,6 +33,49 @@ from app.services.radar.engine import execute_crawler as _execute_crawler  # noq
 from app.services.radar.scheduler import check_and_run_due_crawlers  # noqa: F401
 
 router = APIRouter(prefix="/radar", tags=["radar"])
+
+# 爬虫模板目录
+_SPIDERS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "spiders")
+
+
+# ─────────────────────────────────────────────
+#  Templates
+# ─────────────────────────────────────────────
+
+
+@router.get("/templates")
+def list_templates():
+    """列出可用的爬虫模板，供前端快速创建使用。"""
+    templates: List[Dict[str, Any]] = []
+    if not os.path.isdir(_SPIDERS_DIR):
+        return templates
+    for fname in sorted(os.listdir(_SPIDERS_DIR)):
+        if not fname.endswith(".json") or fname == "sample-template.json" or fname == "regex-example.json":
+            continue
+        fpath = os.path.join(_SPIDERS_DIR, fname)
+        try:
+            with open(fpath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            templates.append({
+                "id": data.get("id", fname),
+                "name": data.get("name", fname),
+                "description": data.get("description", ""),
+                "url": data.get("request", {}).get("url", ""),
+                "css_selector": data.get("parse", {}).get("item_selector", ""),
+                "encoding": data.get("request", {}).get("encoding", "utf-8"),
+                "notes": [],
+            })
+            # 提取注意事项
+            desc = data.get("description", "")
+            if "cookie" in desc.lower():
+                templates[-1]["notes"].append("需要从浏览器复制 Cookie")
+            if "代理" in desc or "proxy" in desc.lower():
+                templates[-1]["notes"].append("建议配置代理")
+            if "反爬" in desc:
+                templates[-1]["notes"].append("反爬较严格，可能需要多次尝试")
+        except Exception:
+            continue
+    return templates
 
 
 # ─────────────────────────────────────────────
@@ -138,8 +182,8 @@ def run_crawler_manual(
         raise HTTPException(status_code=404, detail="爬虫配置不存在")
 
     background_tasks.add_task(_execute_crawler, config_id)
-    config.last_run_at = datetime.now(timezone.utc)
-    db.commit()
+    # 注意：last_run_at 由 engine.execute_crawler 统一设置，
+    # 不在此处提前写入，避免爬虫失败时调度器跳过重试
     return {"detail": "爬虫已开始运行，请稍后查看结果"}
 
 

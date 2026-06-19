@@ -4,11 +4,18 @@ Background scheduler for the radar crawler.
 由 main.py 的 lifespan 周期调用，扫描所有 is_active 的爬虫配置，
 对到期（now >= last_run_at + interval_hours）的配置执行一次。
 
+关键设计：
+- 使用 ThreadPoolExecutor 并发执行到期爬虫，避免串行阻塞调度线程
+- 使用 _running_configs 集合防止同一配置被并发执行（手动触发 + 调度器重叠）
+- 通知去重：deadline_warning 24h 窗口、interview_reminder 1h 窗口
+
 T1-2 扩展：同时扫描未来 24 小时内开始的面试事件，触发站内通知。
 """
 from __future__ import annotations
 
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 
 from app.database import SessionLocal
@@ -17,26 +24,78 @@ from app.services.radar.engine import execute_crawler
 
 logger = logging.getLogger("falltracker.radar.scheduler")
 
+# 并发保护：记录正在执行的 config_id，防止调度器重叠或手动触发导致并发执行
+_running_configs: set[int] = set()
+_running_lock = threading.Lock()
+
+# 爬虫执行线程池（最大并发数）
+_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="crawler")
+
+
+def _execute_with_lock(config_id: int) -> None:
+    """带并发锁的爬虫执行包装器，防止同一配置被并发执行。"""
+    with _running_lock:
+        if config_id in _running_configs:
+            logger.info("Skipping config_id=%s: already running", config_id)
+            return
+        _running_configs.add(config_id)
+
+    try:
+        execute_crawler(config_id)
+    finally:
+        with _running_lock:
+            _running_configs.discard(config_id)
+
 
 def check_and_run_due_crawlers() -> None:
-    """Check all active crawler configs and run any that are due."""
+    """Check all active crawler configs and run any that are due.
+
+    使用线程池并发执行到期爬虫，避免串行阻塞调度线程。
+    通过 _running_configs 集合防止同一配置被并发执行。
+    """
     db = SessionLocal()
     try:
-        # 使用 SQLAlchemy 2.0 推荐的 is_(True) 写法（与 is_(False) 对应）
         due_configs = (
             db.query(CrawlerConfig)
             .filter(CrawlerConfig.is_active.is_(True))
             .all()
         )
         now = datetime.now(timezone.utc)
+        due_ids: list[int] = []
         for config in due_configs:
             if config.last_run_at is None:
-                # Never run before
-                execute_crawler(config.id)
+                due_ids.append(config.id)
             else:
                 next_run = config.last_run_at + timedelta(hours=config.interval_hours)
                 if now >= next_run:
-                    execute_crawler(config.id)
+                    due_ids.append(config.id)
+
+        if not due_ids:
+            return
+
+        # 过滤掉正在执行的配置
+        with _running_lock:
+            runnable_ids = [cid for cid in due_ids if cid not in _running_configs]
+
+        if not runnable_ids:
+            return
+
+        logger.info("Scheduler: submitting %d due crawlers (of %d total due)", len(runnable_ids), len(due_ids))
+
+        # 并发提交到线程池
+        futures = {
+            _EXECUTOR.submit(_execute_with_lock, config_id): config_id
+            for config_id in runnable_ids
+        }
+        # 不等待完成（fire-and-forget），让调度器快速返回
+        # 但记录异常
+        for future in as_completed(futures, timeout=0):
+            config_id = futures[future]
+            try:
+                future.result()
+            except Exception as e:
+                logger.warning("Crawler config_id=%s raised in scheduler: %s", config_id, e)
+
     except Exception as e:
         logger.exception("Scheduler tick failed: %s", e)
     finally:
