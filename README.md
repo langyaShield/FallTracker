@@ -13,9 +13,9 @@
 - **投递管理** — 记录每一条投递（公司、岗位、状态、标签、截止日期），关联简历和面试事件
 - **面试日历** — 日历视图集中查看所有面试与截止日期，支持 ICS 导出订阅
 - **面试复盘** — 记录面试笔记，LLM 辅助生成结构化 Q&A 和反思总结
-- **简历管理** — 上传 PDF / Word (.docx) / 图片简历，自动 OCR 提取文本并支持全文搜索
-- **职位雷达** — 配置爬虫定时抓取招聘网站，LLM 智能分析匹配结果，邮件 + 站内通知
-- **数据统计** — 投递状态分布、转化率漏斗、时间线等多维度统计分析
+- **简历管理** — 上传 PDF / Word (.docx) / 图片简历，自动 OCR 提取文本并支持全文搜索；支持批量删除、重新 OCR、文件替换、下载
+- **职位雷达** — 配置爬虫定时抓取招聘网站，LLM 智能分析匹配结果，邮件 + 站内通知；支持招聘网站模板一键创建、向导式配置、常见邮箱预设
+- **数据统计** — 核心KPI（总投递/回复率/面试率/Offer率/待跟进）、投递趋势折线图、转化漏斗图、面试类型与轮次统计、公司进展排名与停留天数预警
 - **用户设置** — 自定义 LLM API（DeepSeek 等）和邮件 SMTP 配置
 
 ### 秋招增强功能
@@ -72,6 +72,7 @@
 | Pinia | 状态管理 |
 | Vue Router | 路由 |
 | Axios | HTTP 客户端（含 401 全局拦截） |
+| ECharts + vue-echarts | 数据可视化图表 |
 
 ### 部署
 
@@ -106,10 +107,10 @@ FallTracker/
 │   │   │   ├── auth.py            # 注册 / 登录 / 当前用户（含速率限制）
 │   │   │   ├── deliveries.py      # 投递 CRUD + 筛选搜索 + 批量操作 + CSV 导入导出
 │   │   │   ├── events.py          # 面试事件 CRUD + ICS 导出
-│   │   │   ├── resumes.py         # 简历上传 / OCR / 搜索 / 预览
+│   │   │   ├── resumes.py         # 简历上传 / OCR / 搜索 / 预览 / 批量删除 / 重新OCR / 下载
 │   │   │   ├── reviews.py         # 面试复盘 CRUD
-│   │   │   ├── radar.py           # 爬虫配置 / 执行 / 结果
-│   │   │   ├── statistics.py      # 统计数据（漏斗 / 转化率 / 时间线）
+│   │   │   ├── radar.py           # 爬虫配置 / 执行 / 结果 / 模板列表
+│   │   │   ├── statistics.py      # 统计数据（总览 / 漏斗 / 转化率 / 趋势 / 公司进展 / 面试统计）
 │   │   │   ├── settings.py        # 用户设置（LLM / SMTP，含加密）
 │   │   │   └── notifications.py   # 站内通知 CRUD + 批量删除
 │   │   └── services/
@@ -132,15 +133,18 @@ FallTracker/
 │   │   │   ├── HomePage.vue       # 首页（KPI + 紧急 deadline 预警 + 即将到来的面试）
 │   │   │   ├── DeliveryDetailPage.vue  # 投递详情 + 事件时间线
 │   │   │   ├── CalendarPage.vue   # 面试日历 + ICS 导出
-│   │   │   ├── RadarPage.vue      # 职位雷达（爬虫配置 + 运行记录 + 邮箱配置）
-│   │   │   ├── ResumesPage.vue    # 简历管理 + OCR + 全文搜索
+│   │   │   ├── RadarPage.vue      # 职位雷达（模板快速创建 + 向导式配置 + 运行记录 + 邮箱预设）
+│   │   │   ├── ResumesPage.vue    # 简历管理 + OCR + 全文搜索 + 批量操作 + 文件替换
 │   │   │   ├── ReviewsPage.vue    # 面试复盘 + LLM 生成
-│   │   │   ├── StatisticsPage.vue # 数据统计（漏斗 + 转化率 + 时间线）
+│   │   │   ├── StatisticsPage.vue # 数据统计（KPI + 趋势折线图 + 漏斗图 + 面试统计 + 公司进展）
 │   │   │   └── SettingsPage.vue   # 用户设置
 │   │   ├── components/
 │   │   │   ├── PageHeader.vue     # 公共页头组件
 │   │   │   ├── NotificationCenter.vue  # 站内通知中心（铃铛 + 未读角标）
-│   │   │   └── BatchImportDialog.vue   # CSV 批量导入对话框
+│   │   │   ├── BatchImportDialog.vue   # CSV 批量导入对话框
+│   │   │   ├── EChartsWrap.vue         # ECharts 轻量封装组件（按需引入 + 自动 resize）
+│   │   │   └── radar/
+│   │   │       └── RadarEmailSettings.vue  # 邮箱配置（常见邮箱预设 + 授权码引导）
 │   │   ├── composables/           # 组合式函数（useTheme 等）
 │   │   ├── stores/auth.ts         # Pinia 认证状态（含 401 全局拦截）
 │   │   └── lib/                   # 工具函数（api / error / format / constants）
@@ -164,7 +168,7 @@ FallTracker/
 | `User` | 用户账户（bcrypt 密码哈希） |
 | `Delivery` | 投递记录（公司、岗位、状态、标签、截止日期、JD 描述） |
 | `InterviewEvent` | 面试事件（轮次、时间、时长、地点、会议链接、面试官） |
-| `Resume` | 简历（文件路径、OCR 文本、OCR 状态与进度） |
+| `Resume` | 简历（文件路径、文件大小、文件类型、OCR 文本、OCR 状态与进度） |
 | `Review` | 面试复盘（原始笔记、结构化 Q&A、标签、反思） |
 | `Notification` | 站内通知（类型、标题、正文、是否已读） |
 | `CrawlerConfig` | 爬虫配置（URL、CSS 选择器、间隔、目标描述、邮件通知） |
@@ -184,10 +188,10 @@ FallTracker/
 | auth | `/api/auth` | 注册、登录、获取当前用户（含速率限制） |
 | deliveries | `/api/deliveries` | CRUD + 搜索筛选 + 批量状态/标签/删除 + CSV 导入/导出 + 截止查询 |
 | events | `/api/events` | 面试事件 CRUD + `GET /export.ics` 日历导出 |
-| resumes | `/api/resumes` | 上传、OCR、搜索、预览、重命名、删除 |
+| resumes | `/api/resumes` | 上传、OCR、搜索、预览、重命名、文件替换、批量删除、重新OCR、下载 |
 | reviews | `/api/reviews` | CRUD + LLM 生成结构化 Q&A |
-| radar | `/api/radar` | 爬虫配置管理、手动执行、结果查询 |
-| statistics | `/api/statistics` | 漏斗、转化率、时间线 |
+| radar | `/api/radar` | 爬虫配置管理、手动执行、结果查询、模板列表 |
+| statistics | `/api/statistics` | 总览KPI、漏斗、转化率、趋势、公司进展、面试统计 |
 | settings | `/api/settings` | LLM 配置 + SMTP 邮件配置（加密存储） |
 | notifications | `/api/notifications` | 列表、未读数、标记已读、删除、批量清空 |
 
