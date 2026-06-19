@@ -11,7 +11,7 @@ from starlette.staticfiles import StaticFiles
 from app.config import settings
 from app.database import engine, Base
 from app.ratelimit import limiter
-from app.routers import auth, deliveries, events, resumes, reviews, radar, statistics, settings as settings_router, notifications
+from app.routers import auth, deliveries, events, resumes, reviews, radar, statistics, settings as settings_router, notifications, backup, admin
 
 logger = logging.getLogger("falltracker")
 
@@ -82,6 +82,13 @@ _add_column_if_not_exists("user_settings", "smtp_port", "INTEGER")
 _add_column_if_not_exists("user_settings", "smtp_username", "VARCHAR(200)")
 _add_column_if_not_exists("user_settings", "smtp_password", "VARCHAR(500)")
 _add_column_if_not_exists("user_settings", "email_from", "VARCHAR(200)")
+_add_column_if_not_exists("user_settings", "cos_secret_id", "VARCHAR(500)")
+_add_column_if_not_exists("user_settings", "cos_secret_key", "VARCHAR(500)")
+_add_column_if_not_exists("user_settings", "cos_bucket", "VARCHAR(200)")
+_add_column_if_not_exists("user_settings", "cos_region", "VARCHAR(100)")
+_add_column_if_not_exists("user_settings", "cos_path", "VARCHAR(500)")
+_add_column_if_not_exists("users", "is_admin", "BOOLEAN DEFAULT 0")
+_add_column_if_not_exists("users", "is_disabled", "BOOLEAN DEFAULT 0")
 
 # Security: block startup with default SECRET_KEY
 if settings.SECRET_KEY == "change-me-to-a-random-secret-key":
@@ -172,6 +179,8 @@ app.include_router(radar.router, prefix="/api")
 app.include_router(statistics.router, prefix="/api")
 app.include_router(settings_router.router, prefix="/api")
 app.include_router(notifications.router, prefix="/api")
+app.include_router(backup.router, prefix="/api")
+app.include_router(admin.router, prefix="/api")
 
 @app.get("/health")
 def health():

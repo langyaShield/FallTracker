@@ -16,6 +16,7 @@ EVENT_TYPE_LABEL_MAP = {
 class UserCreate(BaseModel):
     username: str
     password: str
+    invite_code: str
 
     @field_validator("username")
     @classmethod
@@ -40,6 +41,20 @@ class UserCreate(BaseModel):
 class UserOut(BaseModel):
     id: int
     username: str
+    is_admin: bool = False
+    is_disabled: bool = False
+    class Config:
+        from_attributes = True
+
+
+class AdminUserOut(BaseModel):
+    id: int
+    username: str
+    is_admin: bool = False
+    is_disabled: bool = False
+    created_at: Optional[datetime] = None
+    delivery_count: int = 0
+    resume_count: int = 0
     class Config:
         from_attributes = True
 
@@ -47,6 +62,23 @@ class UserOut(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str
+
+
+# === Invite Code Schemas ===
+
+
+class InviteCodeCreate(BaseModel):
+    count: int = 5
+    expires_hours: Optional[int] = None  # None = 永不过期
+
+
+class InviteCodeOut(BaseModel):
+    id: int
+    code: str
+    is_used: bool = False
+    used_by_username: Optional[str] = None
+    expires_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
 
 
 VALID_DELIVERY_STATUSES = {"pending", "delivered", "written", "interview", "offer", "rejected"}
@@ -366,6 +398,27 @@ class EmailSettingsOut(BaseModel):
     smtp_username: Optional[str] = None
     smtp_password: Optional[str] = None
     email_from: Optional[str] = None
+    class Config:
+        from_attributes = True
+
+
+# === COS Settings Schemas ===
+
+
+class CosSettingsUpdate(BaseModel):
+    cos_secret_id: Optional[str] = None
+    cos_secret_key: Optional[str] = None
+    cos_bucket: Optional[str] = None
+    cos_region: Optional[str] = None
+    cos_path: Optional[str] = None
+
+
+class CosSettingsOut(BaseModel):
+    cos_secret_id: Optional[str] = None
+    cos_secret_key: Optional[str] = None
+    cos_bucket: Optional[str] = None
+    cos_region: Optional[str] = None
+    cos_path: Optional[str] = None
     class Config:
         from_attributes = True
 

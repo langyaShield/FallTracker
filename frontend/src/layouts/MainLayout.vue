@@ -12,6 +12,7 @@ import {
   Setting,
   User,
   SwitchButton,
+  Key,
 } from '@element-plus/icons-vue'
 import NotificationCenter from '@/components/NotificationCenter.vue'
 
@@ -21,15 +22,21 @@ const authStore = useAuthStore()
 
 const activeMenu = computed(() => route.path)
 
-const menuItems = [
-  { path: '/dashboard', title: '投递大盘', icon: markRaw(Grid) },
-  { path: '/calendar', title: '日历视图', icon: markRaw(Calendar) },
-  { path: '/radar', title: '爬虫雷达', icon: markRaw(Aim) },
-  { path: '/resumes', title: '简历管理', icon: markRaw(Document) },
-  { path: '/reviews', title: '面试复盘', icon: markRaw(EditPen) },
-  { path: '/statistics', title: '数据统计', icon: markRaw(TrendCharts) },
-  { path: '/settings', title: '设置', icon: markRaw(Setting) },
-]
+const menuItems = computed(() => {
+  const items = [
+    { path: '/dashboard', title: '投递大盘', icon: markRaw(Grid) },
+    { path: '/calendar', title: '日历视图', icon: markRaw(Calendar) },
+    { path: '/radar', title: '爬虫雷达', icon: markRaw(Aim) },
+    { path: '/resumes', title: '简历管理', icon: markRaw(Document) },
+    { path: '/reviews', title: '面试复盘', icon: markRaw(EditPen) },
+    { path: '/statistics', title: '数据统计', icon: markRaw(TrendCharts) },
+    { path: '/settings', title: '设置', icon: markRaw(Setting) },
+  ]
+  if (authStore.user?.is_admin) {
+    items.push({ path: '/admin', title: '用户管理', icon: markRaw(Key) })
+  }
+  return items
+})
 
 const handleLogout = () => {
   authStore.logout()

@@ -7,7 +7,7 @@ let unauthorizedListenerInstalled = false
 
 export const useAuthStore = defineStore('auth', () => {
   const token = ref<string | null>(localStorage.getItem('token'))
-  const user = ref<{ id: number; username: string } | null>(null)
+  const user = ref<{ id: number; username: string; is_admin?: boolean; is_disabled?: boolean } | null>(null)
 
   const setToken = (t: string) => {
     token.value = t
@@ -32,8 +32,8 @@ export const useAuthStore = defineStore('auth', () => {
     return res.data
   }
 
-  const register = async (username: string, password: string) => {
-    const res = await api.post('/auth/register', { username, password })
+  const register = async (username: string, password: string, invite_code: string) => {
+    const res = await api.post('/auth/register', { username, password, invite_code })
     return res.data
   }
 

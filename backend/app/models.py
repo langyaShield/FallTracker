@@ -8,6 +8,19 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(50), unique=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
+    is_admin = Column(Boolean, default=False, nullable=False)
+    is_disabled = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+
+
+class InviteCode(Base):
+    __tablename__ = "invite_codes"
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(32), unique=True, nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=False)
+    used_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    used_at = Column(DateTime, nullable=True)
+    expires_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
 
@@ -82,6 +95,12 @@ class UserSettings(Base):
     smtp_username = Column(String(200), nullable=True)
     smtp_password = Column(String(500), nullable=True)
     email_from = Column(String(200), nullable=True)
+    # Tencent Cloud COS settings
+    cos_secret_id = Column(String(500), nullable=True)
+    cos_secret_key = Column(String(500), nullable=True)
+    cos_bucket = Column(String(200), nullable=True)
+    cos_region = Column(String(100), nullable=True)
+    cos_path = Column(String(500), nullable=True)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 

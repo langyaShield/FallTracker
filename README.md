@@ -16,7 +16,7 @@
 - **简历管理** — 上传 PDF / Word (.docx) / 图片简历，自动 OCR 提取文本并支持全文搜索；支持批量删除、重新 OCR、文件替换、下载
 - **职位雷达** — 配置爬虫定时抓取招聘网站，LLM 智能分析匹配结果，邮件 + 站内通知；支持招聘网站模板一键创建、向导式配置、常见邮箱预设
 - **数据统计** — 核心KPI（总投递/回复率/面试率/Offer率/待跟进）、投递趋势折线图、转化漏斗图、面试类型与轮次统计、公司进展排名与停留天数预警
-- **用户设置** — 自定义 LLM API（DeepSeek 等）和邮件 SMTP 配置
+- **用户设置** — 自定义 LLM API（DeepSeek 等）、邮件 SMTP 配置、腾讯云 COS 云端备份配置
 
 ### 秋招增强功能
 
@@ -27,7 +27,19 @@
 - **截止日期智能预警** — 首页紧急 deadline 看板（三级紧急度着色 + 倒计时），看板卡片紧急度标识
 - **面试/截止双重提醒** — 面试 24h 提醒 + 截止 48h 提醒，站内通知 + 日历告警
 
-### 通知与通知
+### 数据备份
+
+- **本地导出/导入** — 一键导出全量数据（投递、面试、简历、爬虫、通知等 8 张表）为 JSON 文件，支持合并导入和覆盖导入
+- **腾讯云 COS 云端备份** — 配置 COS 参数后可一键上传备份到云端，从云端列出备份文件并选择恢复
+- **ID 重映射** — 导入时自动处理所有外键关联（resume_id、delivery_id、config_id），保证关系链不断
+
+### 管理员功能
+
+- **用户管理** — 管理员查看所有注册用户基础信息（用户名、注册时间、投递数、简历数），不含密码和隐私数据
+- **用户禁用/启用** — 对选定账户进行禁用或取消禁用，禁用后用户无法访问系统
+- **邀请码注册控制** — 管理员生成一次性邀请码，新用户注册必须填写有效邀请码，控制平台注册人数
+
+### 通知与提醒
 
 - **站内通知中心** — 雷达命中、爬虫失败、面试提醒、截止提醒统一收件，未读数实时显示
 - **ICS 日历导出** — 一键导出 RFC 5545 标准 .ics 文件，导入 Google Calendar / Outlook
@@ -35,7 +47,9 @@
 
 ### 安全特性
 
-- **敏感信息加密** — LLM API Key、SMTP 密码使用 Fernet (AES-128-CBC) 加密存储
+- **敏感信息加密** — LLM API Key、SMTP 密码、COS SecretId/SecretKey 使用 Fernet (AES-128-CBC) 加密存储
+- **邀请码注册** — 注册必须填写有效邀请码，防止无限注册
+- **用户禁用** — 管理员可禁用恶意用户，禁用后 API 返回 403
 - **API 速率限制** — 登录 10 次/分钟、注册 5 次/分钟，防止暴力破解
 - **CORS 安全** — 通配符 origin 时自动禁用 credentials
 - **强制密钥检查** — 使用默认 SECRET_KEY 时直接阻止应用启动
@@ -58,6 +72,7 @@
 | PyMuPDF + Tesseract OCR + python-docx | 简历文本提取 |
 | python-jose + passlib (bcrypt 4.x) | JWT 认证 & 密码加密 |
 | httpx + BeautifulSoup4 | 爬虫 HTTP 请求 & HTML 解析 |
+| cos-python-sdk-v5 | 腾讯云 COS 对象存储 |
 | Pydantic Settings | 环境变量管理 |
 
 ### 前端
@@ -97,21 +112,23 @@ FallTracker/
 │   │   ├── main.py                # FastAPI 应用入口、路由注册、异常处理、SPA 静态服务
 │   │   ├── config.py              # 环境变量配置
 │   │   ├── database.py            # 数据库引擎 & 会话
-│   │   ├── models.py              # SQLAlchemy 数据模型（9 张表）
+│   │   ├── models.py              # SQLAlchemy 数据模型（11 张表）
 │   │   ├── schemas.py             # Pydantic 请求/响应模型
-│   │   ├── auth.py                # JWT 令牌 & 密码工具
+│   │   ├── auth.py                # JWT 令牌 & 密码工具 & 管理员鉴权 & 禁用检查
 │   │   ├── crypto.py              # Fernet 加密工具（敏感字段加解密）
 │   │   ├── ratelimit.py           # slowapi 速率限制实例
 │   │   ├── ocr.py                 # OCR 文本提取（PDF / 图片 / .docx）
 │   │   ├── routers/
-│   │   │   ├── auth.py            # 注册 / 登录 / 当前用户（含速率限制）
+│   │   │   ├── auth.py            # 注册（邀请码校验）/ 登录 / 当前用户
 │   │   │   ├── deliveries.py      # 投递 CRUD + 筛选搜索 + 批量操作 + CSV 导入导出
 │   │   │   ├── events.py          # 面试事件 CRUD + ICS 导出
 │   │   │   ├── resumes.py         # 简历上传 / OCR / 搜索 / 预览 / 批量删除 / 重新OCR / 下载
 │   │   │   ├── reviews.py         # 面试复盘 CRUD
 │   │   │   ├── radar.py           # 爬虫配置 / 执行 / 结果 / 模板列表
 │   │   │   ├── statistics.py      # 统计数据（总览 / 漏斗 / 转化率 / 趋势 / 公司进展 / 面试统计）
-│   │   │   ├── settings.py        # 用户设置（LLM / SMTP，含加密）
+│   │   │   ├── settings.py        # 用户设置（LLM / SMTP / COS，含加密）
+│   │   │   ├── backup.py          # 数据备份（本地导出导入 + COS 云端上传恢复）
+│   │   │   ├── admin.py           # 管理员接口（用户管理 + 邀请码管理）
 │   │   │   └── notifications.py   # 站内通知 CRUD + 批量删除
 │   │   └── services/
 │   │       ├── notification_service.py  # 通知业务逻辑（独立 service 层）
@@ -137,7 +154,8 @@ FallTracker/
 │   │   │   ├── ResumesPage.vue    # 简历管理 + OCR + 全文搜索 + 批量操作 + 文件替换
 │   │   │   ├── ReviewsPage.vue    # 面试复盘 + LLM 生成
 │   │   │   ├── StatisticsPage.vue # 数据统计（KPI + 趋势折线图 + 漏斗图 + 面试统计 + 公司进展）
-│   │   │   └── SettingsPage.vue   # 用户设置
+│   │   │   ├── AdminPage.vue      # 管理员界面（用户管理 + 邀请码管理）
+│   │   │   └── SettingsPage.vue   # 用户设置（LLM / 邮箱 / 数据备份 / COS 云端备份）
 │   │   ├── components/
 │   │   │   ├── PageHeader.vue     # 公共页头组件
 │   │   │   ├── NotificationCenter.vue  # 站内通知中心（铃铛 + 未读角标）
@@ -146,7 +164,7 @@ FallTracker/
 │   │   │   └── radar/
 │   │   │       └── RadarEmailSettings.vue  # 邮箱配置（常见邮箱预设 + 授权码引导）
 │   │   ├── composables/           # 组合式函数（useTheme 等）
-│   │   ├── stores/auth.ts         # Pinia 认证状态（含 401 全局拦截）
+│   │   ├── stores/auth.ts         # Pinia 认证状态（含 401 全局拦截 + is_admin）
 │   │   └── lib/                   # 工具函数（api / error / format / constants）
 │   ├── package.json
 │   ├── vite.config.ts
@@ -165,7 +183,8 @@ FallTracker/
 
 | 模型 | 说明 |
 |------|------|
-| `User` | 用户账户（bcrypt 密码哈希） |
+| `User` | 用户账户（bcrypt 密码哈希、管理员标识、禁用状态） |
+| `InviteCode` | 邀请码（一次性使用、过期时间、使用者记录） |
 | `Delivery` | 投递记录（公司、岗位、状态、标签、截止日期、JD 描述） |
 | `InterviewEvent` | 面试事件（轮次、时间、时长、地点、会议链接、面试官） |
 | `Resume` | 简历（文件路径、文件大小、文件类型、OCR 文本、OCR 状态与进度） |
@@ -173,7 +192,7 @@ FallTracker/
 | `Notification` | 站内通知（类型、标题、正文、是否已读） |
 | `CrawlerConfig` | 爬虫配置（URL、CSS 选择器、间隔、目标描述、邮件通知） |
 | `CrawlerResult` | 爬虫执行结果（原始文本、LLM 分析、是否命中、邮件状态） |
-| `UserSettings` | 用户设置（LLM API、SMTP 邮件配置，敏感字段加密存储） |
+| `UserSettings` | 用户设置（LLM API、SMTP 邮件、COS 云端备份，敏感字段加密存储） |
 
 投递状态流转：`待投递 → 已投递 → 笔试中 → 面试中 → 已Offer / 已终止`
 
@@ -185,14 +204,16 @@ FallTracker/
 
 | 模块 | 前缀 | 主要端点 |
 |------|------|----------|
-| auth | `/api/auth` | 注册、登录、获取当前用户（含速率限制） |
+| auth | `/api/auth` | 注册（邀请码校验）、登录、获取当前用户 |
 | deliveries | `/api/deliveries` | CRUD + 搜索筛选 + 批量状态/标签/删除 + CSV 导入/导出 + 截止查询 |
 | events | `/api/events` | 面试事件 CRUD + `GET /export.ics` 日历导出 |
 | resumes | `/api/resumes` | 上传、OCR、搜索、预览、重命名、文件替换、批量删除、重新OCR、下载 |
 | reviews | `/api/reviews` | CRUD + LLM 生成结构化 Q&A |
 | radar | `/api/radar` | 爬虫配置管理、手动执行、结果查询、模板列表 |
 | statistics | `/api/statistics` | 总览KPI、漏斗、转化率、趋势、公司进展、面试统计 |
-| settings | `/api/settings` | LLM 配置 + SMTP 邮件配置（加密存储） |
+| settings | `/api/settings` | LLM 配置 + SMTP 邮件配置 + COS 云端备份配置（加密存储） |
+| backup | `/api/backup` | 本地导出/导入 + COS 云端上传/恢复/列表 |
+| admin | `/api/admin` | 用户列表/禁用/启用 + 邀请码生成/列表（仅管理员） |
 | notifications | `/api/notifications` | 列表、未读数、标记已读、删除、批量清空 |
 
 ### deliveries 端点详情
@@ -209,6 +230,26 @@ FallTracker/
 | `PUT` | `/deliveries/batch/tags` | 批量添加/移除标签 |
 | `DELETE` | `/deliveries/batch` | 批量删除 |
 | `GET/PUT/DELETE` | `/deliveries/{id}` | 单条 CRUD |
+
+### backup 端点详情
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/backup/export` | 导出全量数据为 JSON 文件下载 |
+| `POST` | `/backup/import` | 上传 JSON 文件恢复数据（支持 merge/overwrite 模式） |
+| `POST` | `/backup/upload-to-cos` | 导出并上传到腾讯云 COS |
+| `GET` | `/backup/cos-list` | 列出 COS 上的备份文件 |
+| `POST` | `/backup/restore-from-cos` | 从 COS 下载备份并恢复数据 |
+
+### admin 端点详情
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| `GET` | `/admin/users` | 获取所有用户列表（含投递数/简历数统计） |
+| `POST` | `/admin/users/{id}/disable` | 禁用用户 |
+| `POST` | `/admin/users/{id}/enable` | 取消禁用用户 |
+| `POST` | `/admin/invite-codes` | 批量生成邀请码 |
+| `GET` | `/admin/invite-codes` | 获取所有邀请码列表 |
 
 健康检查：`GET /health`
 OpenAPI 文档：`GET /docs`（Swagger UI）
@@ -276,6 +317,14 @@ wsl -d Ubuntu-22.04 -e bash scripts/wsl_docker_inspect.sh
 ```
 
 访问 http://localhost:8000/
+
+### 设置管理员
+
+首个管理员需手动在数据库设置：
+
+```sql
+UPDATE users SET is_admin = 1 WHERE username = '你的管理员用户名';
+```
 
 ---
 
