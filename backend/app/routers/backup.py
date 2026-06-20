@@ -158,8 +158,8 @@ def _gather_backup_data(db: Session, uid: int) -> dict:
         d = _model_to_dict(e)
         d["_old_delivery_id"] = e.delivery_id
         d.pop("delivery_id", None)
-        # Dedup key: same delivery + same event type + same scheduled time
-        dedup_key = (e.delivery_id, d.get("event_type"), d.get("scheduled_at"))
+        # Dedup key: same delivery + same event type + same round + same scheduled time
+        dedup_key = (e.delivery_id, d.get("event_type"), d.get("round_number"), d.get("scheduled_at"))
         if dedup_key in seen_events:
             continue
         seen_events.add(dedup_key)

@@ -347,6 +347,14 @@ def create_event(delivery_id: int, data: InterviewEventCreate, db: Session = Dep
     delivery = db.query(Delivery).filter(Delivery.id == delivery_id, Delivery.user_id == current_user.id).first()
     if not delivery:
         raise HTTPException(status_code=404, detail="Delivery not found")
+    # 防止重复创建：同一投递下相同 event_type + scheduled_at 视为重复
+    existing = db.query(InterviewEvent).filter(
+        InterviewEvent.delivery_id == delivery_id,
+        InterviewEvent.event_type == data.event_type,
+        InterviewEvent.scheduled_at == data.scheduled_at,
+    ).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="该投递下已存在相同类型和时间的面试事件")
     db_item = InterviewEvent(**data.model_dump(), delivery_id=delivery_id)
     db.add(db_item)
     db.commit()

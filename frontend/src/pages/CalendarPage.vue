@@ -29,10 +29,10 @@ const interviewEvents = ref<CalendarEvent[]>([])
 const deadlineEvents = ref<CalendarEvent[]>([])
 const calendarEvents = computed(() => {
   const all = [...interviewEvents.value, ...deadlineEvents.value]
-  // 去重：按 id 去重，避免同一条记录出现多次
+  // 去重：按 (delivery_id, event_type, start) 去重，避免面试事件与 deadline 事件视觉重复
   const seen = new Set<string>()
   return all.filter(e => {
-    const key = String(e.id)
+    const key = `${e.extendedProps.delivery_id}|${e.extendedProps.event_type}|${e.start}`
     if (seen.has(key)) return false
     seen.add(key)
     return true
