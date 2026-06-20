@@ -39,12 +39,14 @@
 - **用户管理** — 管理员查看所有注册用户基础信息（用户名、注册时间、投递数、简历数），不含密码和隐私数据
 - **用户禁用/启用** — 对选定账户进行禁用或取消禁用，禁用后用户无法访问系统
 - **邀请码注册控制** — 管理员生成一次性邀请码，新用户注册必须填写有效邀请码，控制平台注册人数
+- **过期邀请码自动清理** — 系统每小时自动删除已过期的邀请码，管理员也可在后台手动触发清理
 
 ### 通知与提醒
 
 - **站内通知中心** — 雷达命中、爬虫失败、面试提醒、截止提醒统一收件，未读数实时显示
 - **ICS 日历导出** — 一键导出 RFC 5545 标准 .ics 文件，导入 Google Calendar / Outlook
 - **邮件通知** — 爬虫命中目标时自动发送邮件到指定邮箱
+- **修改密码** — 用户可在侧边栏点击用户名进入修改密码页面，支持旧密码验证
 
 ### 安全特性
 
@@ -159,8 +161,9 @@ FallTracker/
 │   │   │   ├── ResumesPage.vue    # 简历管理 + OCR + 全文搜索 + 批量操作 + 文件替换
 │   │   │   ├── ReviewsPage.vue    # 面试复盘 + LLM 生成
 │   │   │   ├── StatisticsPage.vue # 数据统计（KPI + 趋势折线图 + 漏斗图 + 面试统计 + 公司进展）
-│   │   │   ├── AdminPage.vue      # 管理员界面（用户管理 + 邀请码管理）
-│   │   │   └── SettingsPage.vue   # 用户设置（LLM / 邮箱 / 数据备份 / COS 云端备份）
+│   │   │   ├── AdminPage.vue      # 管理员界面（用户管理 + 邀请码管理 + 过期清理）
+│   │   │   ├── SettingsPage.vue   # 用户设置（LLM / 邮箱 / 数据备份 / COS 云端备份）
+│   │   │   └── ChangePasswordPage.vue  # 修改密码
 │   │   ├── components/
 │   │   │   ├── PageHeader.vue     # 公共页头组件
 │   │   │   ├── NotificationCenter.vue  # 站内通知中心（铃铛 + 未读角标）
@@ -209,7 +212,7 @@ FallTracker/
 
 | 模块 | 前缀 | 主要端点 |
 |------|------|----------|
-| auth | `/api/auth` | 注册（邀请码校验）、登录、获取当前用户 |
+| auth | `/api/auth` | 注册（邀请码校验）、登录、获取当前用户、修改密码 |
 | deliveries | `/api/deliveries` | CRUD + 搜索筛选 + 批量状态/标签/删除 + CSV 导入/导出 + 截止查询 |
 | events | `/api/events` | 面试事件 CRUD + `GET /export.ics` 日历导出 |
 | resumes | `/api/resumes` | 上传、OCR、搜索、预览、重命名、文件替换、批量删除、重新OCR、下载 |
@@ -257,6 +260,7 @@ FallTracker/
 | `POST` | `/admin/users/{id}/enable` | 取消禁用用户 |
 | `POST` | `/admin/invite-codes` | 批量生成邀请码 |
 | `GET` | `/admin/invite-codes` | 获取所有邀请码列表 |
+| `DELETE` | `/admin/invite-codes/expired` | 清理所有已过期的邀请码 |
 
 健康检查：`GET /health`
 OpenAPI 文档：`GET /docs`（Swagger UI）
