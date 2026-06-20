@@ -18,8 +18,8 @@ def register(request: Request, user: UserCreate, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=400, detail="Username already registered")
 
-    # 校验邀请码
-    invite = db.query(InviteCode).filter(InviteCode.code == user.invite_code).first()
+    # 校验邀请码（加行级锁防止并发重复使用）
+    invite = db.query(InviteCode).filter(InviteCode.code == user.invite_code).with_for_update().first()
     if not invite:
         raise HTTPException(status_code=400, detail="邀请码无效")
     if invite.used_by is not None:

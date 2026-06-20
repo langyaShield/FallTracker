@@ -61,7 +61,7 @@ const fetchEvents = async () => {
         position: evt.position,
       }
     }))
-  } catch (e: any) {
+  } catch (e: unknown) {
     ElMessage.error(extractErrorMessage(e, '获取事件失败'))
   } finally {
     loading.value = false
@@ -169,7 +169,7 @@ const exportIcs = async () => {
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
     ElMessage.success('已导出 iCal 文件，可导入 Google / Apple / Outlook 日历')
-  } catch (e: any) {
+  } catch (e: unknown) {
     ElMessage.error(extractErrorMessage(e, '导出失败'))
   }
 }
@@ -186,7 +186,7 @@ const saveEvent = async () => {
     ElMessage.success('添加成功')
     dialogVisible.value = false
     fetchEvents()
-  } catch (e: any) {
+  } catch (e: unknown) {
     ElMessage.error(extractErrorMessage(e, '保存失败'))
   }
 }
@@ -222,15 +222,26 @@ onMounted(() => {
     </div>
 
     <!-- N-BUG-5: 24h 内面试提醒条（顶部醒目提示，避免错过面试） -->
-    <el-alert
-      v-if="upcomingAlerts.length > 0"
-      :title="upcomingAlerts[0].title"
-      :description="upcomingAlerts[0].body"
-      type="warning"
-      :closable="false"
-      show-icon
-      class="interview-alert"
-    />
+    <div v-if="upcomingAlerts.length > 0" class="interview-alerts">
+      <el-alert
+        v-for="(alert, idx) in upcomingAlerts.slice(0, 3)"
+        :key="idx"
+        :title="alert.title"
+        :description="alert.body"
+        type="warning"
+        :closable="false"
+        show-icon
+        class="interview-alert"
+      />
+      <el-alert
+        v-if="upcomingAlerts.length > 3"
+        :title="`还有 ${upcomingAlerts.length - 3} 场面试即将开始`"
+        type="info"
+        :closable="false"
+        show-icon
+        class="interview-alert"
+      />
+    </div>
 
     <el-empty
       v-if="!loading && interviewEvents.length === 0 && deadlineEvents.length === 0"
@@ -378,5 +389,11 @@ onMounted(() => {
 .deadline-chip {
   font-weight: 600;
   border-style: dashed;
+}
+.interview-alerts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
 }
 </style>

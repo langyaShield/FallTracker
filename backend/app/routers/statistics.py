@@ -204,26 +204,34 @@ def interview_stats(db: Session = Depends(get_db), current_user: User = Depends(
     """面试统计：类型分布、轮次分布、即将面试数"""
     now = datetime.now(timezone.utc)
 
-    # 获取当前用户所有投递的面试事件
-    events = (
-        db.query(InterviewEvent)
-        .join(Delivery, InterviewEvent.delivery_id == Delivery.id)
-        .filter(Delivery.user_id == current_user.id)
+    # Use DB aggregation instead of loading all events into memory
+    delivery_ids = db.query(Delivery.id).filter(Delivery.user_id == current_user.id).subquery()
+
+    by_type_rows = (
+        db.query(InterviewEvent.event_type, func.count(InterviewEvent.id))
+        .filter(InterviewEvent.delivery_id.in_(delivery_ids))
+        .group_by(InterviewEvent.event_type)
         .all()
     )
+    by_type = {t or "other": c for t, c in by_type_rows}
 
-    by_type: dict[str, int] = {}
-    by_round: dict[str, int] = {}
-    for evt in events:
-        t = evt.event_type or "other"
-        by_type[t] = by_type.get(t, 0) + 1
-        r = str(evt.round_number or 1)
-        by_round[r] = by_round.get(r, 0) + 1
+    by_round_rows = (
+        db.query(InterviewEvent.round_number, func.count(InterviewEvent.id))
+        .filter(InterviewEvent.delivery_id.in_(delivery_ids))
+        .group_by(InterviewEvent.round_number)
+        .all()
+    )
+    by_round = {str(r or 1): c for r, c in by_round_rows}
 
-    upcoming_count = sum(1 for e in events if e.scheduled_at and e.scheduled_at.replace(tzinfo=timezone.utc) >= now)
+    total = sum(by_type.values())
+    upcoming_count = (
+        db.query(func.count(InterviewEvent.id))
+        .filter(InterviewEvent.delivery_id.in_(delivery_ids), InterviewEvent.scheduled_at >= now)
+        .scalar() or 0
+    )
 
     return {
-        "total_interviews": len(events),
+        "total_interviews": total,
         "by_type": by_type,
         "by_round": by_round,
         "upcoming_count": upcoming_count,

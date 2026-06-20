@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Edit, Delete } from '@element-plus/icons-vue'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/lib/error'
@@ -28,7 +28,7 @@ const fetchReviews = async () => {
   try {
     const res = await api.get('/reviews')
     reviews.value = res.data || []
-  } catch (e: any) {
+  } catch (e: unknown) {
     ElMessage.error(extractErrorMessage(e, '获取复盘失败'))
   } finally {
     loading.value = false
@@ -68,7 +68,7 @@ const saveReview = async () => {
     ElMessage.success('保存成功')
     dialogVisible.value = false
     fetchReviews()
-  } catch (e: any) {
+  } catch (e: unknown) {
     ElMessage.error(extractErrorMessage(e, '保存失败'))
   }
 }
@@ -79,7 +79,7 @@ const generateStructured = async (id: number) => {
     await api.post(`/reviews/${id}/generate`)
     ElMessage.success('生成成功')
     fetchReviews()
-  } catch (e: any) {
+  } catch (e: unknown) {
     ElMessage.error(extractErrorMessage(e, '生成失败'))
   } finally {
     generating.value = false
@@ -88,11 +88,12 @@ const generateStructured = async (id: number) => {
 
 const deleteReview = async (id: number) => {
   try {
+    await ElMessageBox.confirm('确定删除这条复盘记录吗？', '提示', { type: 'warning' })
     await api.delete(`/reviews/${id}`)
     ElMessage.success('删除成功')
     fetchReviews()
-  } catch (e: any) {
-    ElMessage.error(extractErrorMessage(e, '删除失败'))
+  } catch {
+    // cancelled
   }
 }
 

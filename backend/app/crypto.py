@@ -37,6 +37,10 @@ def decrypt_value(ciphertext: str | None) -> str | None:
         return ciphertext
     try:
         return _fernet.decrypt(ciphertext.encode("utf-8")).decode("utf-8")
-    except (InvalidToken, Exception):
-        # Legacy plaintext value or corrupted data — return as-is
+    except InvalidToken:
+        # Legacy plaintext value — return as-is (not a Fernet token)
         return ciphertext
+    except Exception as e:
+        # Corrupted data — log warning and return empty to avoid leaking ciphertext
+        logger.warning("Decryption failed for value (len=%d): %s", len(ciphertext), e)
+        return ""

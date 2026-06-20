@@ -71,22 +71,39 @@ def client(db_session):
 @pytest.fixture(scope="function")
 def test_user(client):
     """Register a test user, return user + auth token."""
+    # First create an invite code via DB directly
+    from app.database import SessionLocal
+    from app.models import InviteCode
+    db = SessionLocal()
+    invite = InviteCode(code="TESTCODE", created_by=1)
+    # Need an admin user first - create directly in DB
+    from app.auth import get_password_hash
+    admin = User(username="admin_test", password_hash=get_password_hash("admin123"), is_admin=True)
+    db.add(admin)
+    db.commit()
+    db.refresh(admin)
+    invite.created_by = admin.id
+    db.add(invite)
+    db.commit()
+    db.close()
+
     payload = {
         "username": "testuser",
         "password": "password123",
+        "invite_code": "TESTCODE",
     }
     r = client.post("/api/auth/register", json=payload)
     assert r.status_code == 200, f"register failed: {r.text}"
     user_id = r.json()["id"]
 
-    # 单独走 login 拿 token
+    # Login to get token
     r2 = client.post(
         "/api/auth/login",
-        data={"username": payload["username"], "password": payload["password"]},
+        data={"username": "testuser", "password": "password123"},
     )
     assert r2.status_code == 200, f"login failed: {r2.text}"
     token = r2.json()["access_token"]
-    user = {"id": user_id, "username": payload["username"]}
+    user = {"id": user_id, "username": "testuser"}
     return user, {"Authorization": f"Bearer {token}"}
 
 

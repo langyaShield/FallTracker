@@ -143,12 +143,12 @@ def search_resumes(
     current_user: User = Depends(get_current_user),
 ):
     """Search resumes by name or OCR text content with pagination."""
-    pattern = f"%{q}%"
+    safe_q = q.replace("%", "\\%").replace("_", "\\_")
     query = db.query(Resume).filter(
         Resume.user_id == current_user.id,
         or_(
-            Resume.name.contains(q),
-            Resume.ocr_text.contains(q),
+            Resume.name.contains(safe_q),
+            Resume.ocr_text.contains(safe_q),
         )
     )
     total = query.count()
@@ -164,7 +164,7 @@ def create_resume(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    background_tasks: BackgroundTasks = None,
+    background_tasks: BackgroundTasks,
 ):
     file_bytes, ext = _validate_upload(file)
     filepath, _ = _save_file(file_bytes, ext)
@@ -204,7 +204,7 @@ def update_resume(
     file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    background_tasks: BackgroundTasks = None,
+    background_tasks: BackgroundTasks,
 ):
     """更新简历：支持重命名和文件替换。替换文件后会自动重新OCR。"""
     item = db.query(Resume).filter(Resume.id == resume_id, Resume.user_id == current_user.id).first()
@@ -276,7 +276,7 @@ def re_ocr_resume(
     resume_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    background_tasks: BackgroundTasks = None,
+    background_tasks: BackgroundTasks,
 ):
     """重新触发OCR识别"""
     item = db.query(Resume).filter(Resume.id == resume_id, Resume.user_id == current_user.id).first()

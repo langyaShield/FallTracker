@@ -13,7 +13,9 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "*"  # Comma-separated origins, e.g. "http://localhost:5173,http://localhost:3000"
 
     class Config:
-        env_file = "/app/backend/.env"
+        import os
+        _local_env = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
+        env_file = _local_env if os.path.isfile(_local_env) else "/app/backend/.env"
 
     @property
     def cors_origins_list(self) -> List[str]:

@@ -1,3 +1,4 @@
+import re
 import sqlite3, os, logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
@@ -42,6 +43,10 @@ def _add_column_if_not_exists(table_name: str, column_name: str, column_type: st
         raise ValueError(f"Invalid table name: {table_name}")
     if not all(c.isalnum() or c == '_' for c in column_name):
         raise ValueError(f"Invalid column name: {column_name}")
+    # Validate column_type: only allow known safe SQL type tokens
+    _SAFE_TYPE_RE = re.compile(r'^[A-Za-z0-9() ,_]+$')
+    if not _SAFE_TYPE_RE.match(column_type):
+        raise ValueError(f"Invalid column type: {column_type}")
 
     try:
         inspector = sa_inspect(engine)

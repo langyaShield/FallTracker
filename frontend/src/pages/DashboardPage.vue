@@ -188,7 +188,7 @@ const batchAddTags = async () => {
   try {
     await api.put('/deliveries/batch/tags', {
       ids: Array.from(selectedIds.value),
-      tags: [tag],
+      add_tags: [tag],
     })
     ElMessage.success('批量添加标签成功')
     selectedIds.value = new Set()

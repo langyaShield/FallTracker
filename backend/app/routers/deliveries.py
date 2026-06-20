@@ -66,16 +66,18 @@ def list_deliveries(
         q = q.filter(Delivery.status.in_(status))
 
     if tag:
-        # JSON tags stored as list; use LIKE on JSON string for SQLite compatibility
-        q = q.filter(Delivery.tags.cast(str).contains(f'"{tag}"'))
+        # Escape SQL LIKE wildcards in tag value
+        safe_tag = tag.replace("%", "\\%").replace("_", "\\_")
+        q = q.filter(Delivery.tags.cast(str).contains(f'"{safe_tag}"'))
 
     if deadline_before:
         q = q.filter(Delivery.deadline <= deadline_before)
     if deadline_after:
         q = q.filter(Delivery.deadline >= deadline_after)
 
-    # Sorting
-    sort_col = getattr(Delivery, sort_by, Delivery.created_at)
+    # Sorting — whitelist to prevent accessing unintended model attributes
+    ALLOWED_SORT_COLUMNS = {"created_at", "updated_at", "deadline", "company", "position"}
+    sort_col = getattr(Delivery, sort_by, Delivery.created_at) if sort_by in ALLOWED_SORT_COLUMNS else Delivery.created_at
     if sort_order == "asc":
         q = q.order_by(sort_col.asc())
     else:

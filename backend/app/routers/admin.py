@@ -3,7 +3,7 @@
 
 查看所有注册用户基础信息，禁用/启用用户，生成/查看邀请码。
 """
-import random
+import secrets
 import string
 from datetime import datetime, timedelta, timezone
 
@@ -22,7 +22,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 def _generate_code(length: int = 8) -> str:
     """生成随机邀请码（大写字母+数字）。"""
     chars = string.ascii_uppercase + string.digits
-    return "".join(random.choices(chars, k=length))
+    return "".join(secrets.choice(chars) for _ in range(length))
 
 
 # ─────────────────────────────────────────────

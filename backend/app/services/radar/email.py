@@ -87,11 +87,19 @@ def send_notification_email(
         msg["From"] = email_cfg["from_addr"]
         msg["To"] = to_email
 
-        with smtplib.SMTP(email_cfg["server"], email_cfg["port"], timeout=30) as server:
+        port = email_cfg["port"]
+        if port == 465:
+            # SMTP_SSL for port 465
+            server = smtplib.SMTP_SSL(email_cfg["server"], port, timeout=30)
+        else:
+            server = smtplib.SMTP(email_cfg["server"], port, timeout=30)
             server.starttls()
+        try:
             if email_cfg["username"]:
                 server.login(email_cfg["username"], email_cfg["password"])
             server.sendmail(email_cfg["from_addr"], [to_email], msg.as_string())
+        finally:
+            server.quit()
         return True
     except Exception as e:
         logger.exception("Notification email send failed (to=%s, config=%s): %s", to_email, config_name, e)

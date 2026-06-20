@@ -74,6 +74,24 @@ def fetch_html(url: str) -> Tuple[str, int, str]:
     - Cloudflare challenge: terminal
     """
     url = _normalize_url(url)
+    # SSRF protection: block private/internal network addresses
+    import ipaddress
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    hostname = parsed.hostname or ""
+    # Block common internal hostnames
+    _BLOCKED_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "169.254.169.254", "::1"}
+    if hostname.lower() in _BLOCKED_HOSTS:
+        return ("", 0, "(目标地址为内网地址，不允许访问)")
+    # Block private IP ranges
+    try:
+        import socket
+        resolved_ip = socket.gethostbyname(hostname)
+        ip = ipaddress.ip_address(resolved_ip)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+            return ("", 0, "(目标地址为内网地址，不允许访问)")
+    except (socket.gaierror, ValueError):
+        pass  # hostname may not resolve, let it fail naturally
     last_error = ""
 
     for attempt in range(_MAX_RETRIES):

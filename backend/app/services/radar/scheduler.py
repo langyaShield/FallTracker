@@ -88,13 +88,7 @@ def check_and_run_due_crawlers() -> None:
             for config_id in runnable_ids
         }
         # 不等待完成（fire-and-forget），让调度器快速返回
-        # 但记录异常
-        for future in as_completed(futures, timeout=0):
-            config_id = futures[future]
-            try:
-                future.result()
-            except Exception as e:
-                logger.warning("Crawler config_id=%s raised in scheduler: %s", config_id, e)
+        # Errors are logged inside _execute_with_lock.
 
     except Exception as e:
         logger.exception("Scheduler tick failed: %s", e)

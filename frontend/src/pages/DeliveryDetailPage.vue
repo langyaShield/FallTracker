@@ -56,7 +56,7 @@ const fetchDetail = async () => {
   try {
     const res = await api.get(`/deliveries/${route.params.id}`)
     delivery.value = res.data
-  } catch (e: any) {
+  } catch (e: unknown) {
     ElMessage.error(extractErrorMessage(e, '获取详情失败'))
   } finally {
     loading.value = false
@@ -67,7 +67,7 @@ const fetchEvents = async () => {
   try {
     const res = await api.get(`/deliveries/${route.params.id}/events`)
     events.value = res.data
-  } catch (e: any) {
+  } catch (e: unknown) {
     ElMessage.error(extractErrorMessage(e, '获取事件失败'))
   }
 }
@@ -99,7 +99,7 @@ const saveDelivery = async () => {
   try {
     await api.put(`/deliveries/${delivery.value.id}`, delivery.value)
     ElMessage.success('保存成功')
-  } catch (e: any) {
+  } catch (e: unknown) {
     ElMessage.error(extractErrorMessage(e, '保存失败'))
   }
 }
@@ -129,7 +129,7 @@ const saveEvent = async () => {
     }
     eventDialog.value = false
     fetchEvents()
-  } catch (e: any) {
+  } catch (e: unknown) {
     ElMessage.error(extractErrorMessage(e, '保存失败'))
   }
 }
@@ -149,6 +149,7 @@ onMounted(() => {
   fetchDetail()
   fetchEvents()
   fetchResumes()
+  fetchTagSuggestions()
 })
 </script>
 

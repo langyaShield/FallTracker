@@ -1,3 +1,5 @@
+import re
+import json
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
@@ -61,10 +63,12 @@ async def generate_structured(review_id: int, db: Session = Depends(get_db), cur
     if not llm["llm_api_key"]:
         raise HTTPException(status_code=500, detail="LLM API key not configured. Please go to Settings to configure.")
 
+    # Sanitize user input to mitigate prompt injection
+    safe_notes = item.raw_notes[:3000].replace("```", "'''").replace("<|", "< |")
     prompt = f"""你是一位资深技术面试官和职业导师。请根据以下面试复盘笔记，提取核心面试问答，补全标准答案，并给出面试表现反思。
 
 面试笔记：
-{item.raw_notes}
+{safe_notes}
 
 请按以下 JSON 格式输出：
 {{

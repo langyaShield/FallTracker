@@ -67,6 +67,7 @@ const handleLogout = () => {
         </el-menu-item>
       </el-menu>
       <div class="sidebar-footer">
+        <NotificationCenter />
         <div class="user-info">
           <el-icon><User /></el-icon>
           <span>{{ authStore.user?.username || '用户' }}</span>
