@@ -411,6 +411,7 @@ class CosSettingsUpdate(BaseModel):
     cos_bucket: Optional[str] = None
     cos_region: Optional[str] = None
     cos_path: Optional[str] = None
+    cos_auto_backup_hours: Optional[int] = None  # 自动备份间隔（小时），0或None=关闭
 
 
 class CosSettingsOut(BaseModel):
@@ -419,6 +420,7 @@ class CosSettingsOut(BaseModel):
     cos_bucket: Optional[str] = None
     cos_region: Optional[str] = None
     cos_path: Optional[str] = None
+    cos_auto_backup_hours: Optional[int] = None
     class Config:
         from_attributes = True
 

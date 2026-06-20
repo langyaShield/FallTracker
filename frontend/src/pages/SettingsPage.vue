@@ -137,6 +137,7 @@ const cosSecretIdMasked = ref(true)
 const cosSecretKeyMasked = ref(true)
 const cosConfigured = ref(false)
 const cosCollapse = ref<string[]>([])
+const cosAutoBackupHours = ref(0)
 
 const COS_REGIONS = [
   { label: '北京', value: 'ap-beijing' },
@@ -169,6 +170,7 @@ const fetchCosSettings = async () => {
     cosSecretIdMasked.value = !!res.data.cos_secret_id && res.data.cos_secret_id.includes('*')
     cosSecretKeyMasked.value = !!res.data.cos_secret_key && res.data.cos_secret_key.includes('*')
     cosConfigured.value = !!(res.data.cos_bucket && res.data.cos_region)
+    cosAutoBackupHours.value = res.data.cos_auto_backup_hours || 0
   } catch {
     // 可能未配置，忽略
   }
@@ -177,10 +179,11 @@ const fetchCosSettings = async () => {
 const saveCosSettings = async () => {
   cosSaving.value = true
   try {
-    const payload: Record<string, string> = {
+    const payload: Record<string, string | number> = {
       cos_bucket: cosBucket.value,
       cos_region: cosRegion.value,
       cos_path: cosPath.value || 'backups/',
+      cos_auto_backup_hours: cosAutoBackupHours.value,
     }
     if (!cosSecretIdMasked.value && cosSecretId.value) {
       payload.cos_secret_id = cosSecretId.value
@@ -275,6 +278,19 @@ const formatDate = (dateStr: string) => {
   } catch {
     return dateStr
   }
+}
+
+const getBackupType = (key: string) => {
+  if (key.includes('_auto_')) return 'auto'
+  if (key.includes('_manual_')) return 'manual'
+  return 'unknown'
+}
+
+const getBackupTypeLabel = (key: string) => {
+  const type = getBackupType(key)
+  if (type === 'auto') return '自动备份'
+  if (type === 'manual') return '手动备份'
+  return '备份'
 }
 
 // ─── COS 文件管理 ───
@@ -490,6 +506,23 @@ onMounted(() => {
               <el-input v-model="cosPath" placeholder="backups/" />
             </el-form-item>
 
+            <el-form-item label="自动备份">
+              <el-select v-model="cosAutoBackupHours" placeholder="选择自动备份间隔" style="width: 100%">
+                <el-option :value="0" label="关闭自动备份" />
+                <el-option :value="1" label="每 1 小时" />
+                <el-option :value="2" label="每 2 小时" />
+                <el-option :value="4" label="每 4 小时" />
+                <el-option :value="6" label="每 6 小时" />
+                <el-option :value="12" label="每 12 小时" />
+                <el-option :value="24" label="每 24 小时" />
+                <el-option :value="48" label="每 48 小时" />
+                <el-option :value="168" label="每 7 天" />
+              </el-select>
+              <div class="auto-backup-hint">
+                开启后，系统将按设定间隔自动将数据备份到 COS，文件名标记为"自动备份"
+              </div>
+            </el-form-item>
+
             <el-form-item>
               <el-button type="primary" :loading="cosSaving" @click="saveCosSettings">保存 COS 配置</el-button>
             </el-form-item>
@@ -555,6 +588,16 @@ onMounted(() => {
               </template>
             </el-table-column>
             <el-table-column label="文件名" prop="key" min-width="200" />
+            <el-table-column label="类型" width="100">
+              <template #default="{ row }">
+                <el-tag
+                  :type="getBackupType(row.key) === 'auto' ? 'warning' : 'success'"
+                  size="small"
+                >
+                  {{ getBackupTypeLabel(row.key) }}
+                </el-tag>
+              </template>
+            </el-table-column>
             <el-table-column label="大小" width="100">
               <template #default="{ row }">{{ formatSize(row.size) }}</template>
             </el-table-column>
@@ -757,5 +800,11 @@ onMounted(() => {
 
 .cos-list :deep(.selected-row td:first-child) {
   border-left: 3px solid #16a34a;
+}
+
+.auto-backup-hint {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-top: 4px;
 }
 </style>

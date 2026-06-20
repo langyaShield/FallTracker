@@ -6,7 +6,7 @@
 """
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from typing import Optional
 
@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.crypto import decrypt_value
-from app.database import get_db
+from app.database import get_db, SessionLocal
 from app.models import (
     CrawlerConfig,
     CrawlerResult,
@@ -401,7 +401,7 @@ def upload_to_cos(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """将全量数据导出并上传到腾讯云 COS。"""
+    """将全量数据导出并上传到腾讯云 COS（手动备份）。"""
     s = db.query(UserSettings).filter(UserSettings.user_id == current_user.id).first()
     if not s:
         raise HTTPException(status_code=400, detail="请先在设置中配置腾讯云 COS 参数")
@@ -413,9 +413,9 @@ def upload_to_cos(
     content = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    file_key = f"{path_prefix}falltracker_{timestamp}.json"
+    file_key = f"{path_prefix}falltracker_manual_{timestamp}.json"
 
-    logger.info("COS upload: key=%s, size=%d", file_key, len(content))
+    logger.info("COS upload (manual): key=%s, size=%d", file_key, len(content))
 
     try:
         client.put_object(
@@ -576,3 +576,103 @@ def restore_from_cos(
 
     stats = _import_backup_data(db, current_user.id, data)
     return {"source": "cos", "file_key": file_key, "imported": stats}
+
+
+# ═══════════════════════════════════════════════════════════════
+#  Auto Backup (called by APScheduler)
+# ═══════════════════════════════════════════════════════════════
+
+
+def auto_backup_all_users() -> None:
+    """Scan all users with cos_auto_backup_hours configured and run auto-backup
+    for those whose last auto-backup is older than the configured interval.
+
+    Called periodically by APScheduler.
+    """
+    db = SessionLocal()
+    try:
+        users_with_auto = (
+            db.query(UserSettings)
+            .filter(UserSettings.cos_auto_backup_hours.isnot(None))
+            .filter(UserSettings.cos_auto_backup_hours > 0)
+            .all()
+        )
+        for s in users_with_auto:
+            try:
+                _auto_backup_user(db, s)
+            except Exception as e:
+                logger.error("Auto backup failed for user_id=%s: %s", s.user_id, e)
+    except Exception as e:
+        logger.exception("auto_backup_all_users failed: %s", e)
+    finally:
+        db.close()
+
+
+def _auto_backup_user(db: Session, s: UserSettings) -> None:
+    """Perform auto-backup for a single user if the interval has elapsed."""
+    from app.models import User as UserModel
+
+    # Verify user exists and is not disabled
+    user = db.query(UserModel).filter(UserModel.id == s.user_id, UserModel.is_disabled.is_(False)).first()
+    if not user:
+        return
+
+    # Check COS config is complete
+    secret_id = decrypt_value(s.cos_secret_id)
+    secret_key = decrypt_value(s.cos_secret_key)
+    if not all([secret_id, secret_key, s.cos_bucket, s.cos_region]):
+        logger.debug("Skipping auto-backup for user_id=%s: COS not configured", s.user_id)
+        return
+
+    # Check if enough time has elapsed since last auto-backup
+    # We check the latest auto backup file on COS by listing with prefix
+    interval_hours = s.cos_auto_backup_hours or 0
+    if interval_hours <= 0:
+        return
+
+    try:
+        from qcloud_cos import CosConfig, CosS3Client
+        config = CosConfig(Region=s.cos_region, SecretId=secret_id, SecretKey=secret_key)
+        client = CosS3Client(config)
+    except Exception as e:
+        logger.error("COS client init failed for user_id=%s: %s", s.user_id, e)
+        return
+
+    path_prefix = (s.cos_path or "backups/").rstrip("/") + "/"
+    auto_prefix = f"{path_prefix}falltracker_auto_"
+
+    # List existing auto-backup files to find the most recent one
+    try:
+        resp = client.list_objects(Bucket=s.cos_bucket, Prefix=auto_prefix)
+        contents = resp.get("Contents", [])
+        if contents:
+            # Sort by LastModified descending
+            contents.sort(key=lambda x: x["LastModified"], reverse=True)
+            last_backup_time = datetime.fromisoformat(contents[0]["LastModified"].replace("Z", "+00:00"))
+            elapsed = datetime.now(timezone.utc) - last_backup_time
+            if elapsed < timedelta(hours=interval_hours):
+                logger.debug(
+                    "Skipping auto-backup for user_id=%s: last backup was %.1fh ago (interval=%dh)",
+                    s.user_id, elapsed.total_seconds() / 3600, interval_hours,
+                )
+                return
+    except Exception as e:
+        logger.warning("COS list failed for user_id=%s: %s, proceeding with backup", s.user_id, e)
+
+    # Perform the auto-backup
+    data = _gather_backup_data(db, s.user_id)
+    content = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    file_key = f"{auto_prefix}{timestamp}.json"
+
+    try:
+        client.put_object(
+            Bucket=s.cos_bucket,
+            Key=file_key,
+            Body=content,
+            ContentType="application/json",
+        )
+        logger.info("Auto backup completed for user_id=%s: key=%s, size=%d", s.user_id, file_key, len(content))
+    except Exception as e:
+        logger.error("Auto backup upload failed for user_id=%s: %s", s.user_id, e)

@@ -31,6 +31,7 @@
 
 - **本地导出/导入** — 一键导出全量数据（投递、面试、简历、爬虫、通知等 8 张表）为 JSON 文件，支持覆盖导入
 - **腾讯云 COS 云端备份** — 配置 COS 参数后可一键上传备份到云端，从云端列出备份文件并选择恢复
+- **COS 自动备份** — 可配置自动备份间隔（1h/2h/4h/6h/12h/24h/48h/7d），系统按设定间隔自动上传备份到 COS，文件名区分自动备份与手动备份
 - **ID 重映射** — 导入时自动处理所有外键关联（resume_id、delivery_id、config_id），保证关系链不断
 
 ### 管理员功能
@@ -53,6 +54,10 @@
 - **API 速率限制** — 登录 10 次/分钟、注册 5 次/分钟，防止暴力破解
 - **CORS 安全** — 通配符 origin 时自动禁用 credentials
 - **强制密钥检查** — 使用默认 SECRET_KEY 时直接阻止应用启动
+- **LLM Prompt 注入防护** — 用户输入截断 + 特殊字符转义，防止 prompt injection
+- **SSRF 防护** — 爬虫禁止访问内网地址和私有 IP 段
+- **SQL 注入防护** — sort_by 白名单、LIKE 通配符转义、column_type 正则校验
+- **邀请码行级锁** — 防止并发注册重复使用同一邀请码
 
 ---
 
@@ -127,15 +132,15 @@ FallTracker/
 │   │   │   ├── radar.py           # 爬虫配置 / 执行 / 结果 / 模板列表
 │   │   │   ├── statistics.py      # 统计数据（总览 / 漏斗 / 转化率 / 趋势 / 公司进展 / 面试统计）
 │   │   │   ├── settings.py        # 用户设置（LLM / SMTP / COS，含加密）
-│   │   │   ├── backup.py          # 数据备份（本地导出导入 + COS 云端上传恢复）
+│   │   │   ├── backup.py          # 数据备份（本地导出导入 + COS 云端上传恢复 + 自动备份调度）
 │   │   │   ├── admin.py           # 管理员接口（用户管理 + 邀请码管理）
 │   │   │   └── notifications.py   # 站内通知 CRUD + 批量删除
 │   │   └── services/
 │   │       ├── notification_service.py  # 通知业务逻辑（独立 service 层）
 │   │       └── radar/
-│   │           ├── fetcher.py     # HTTP 抓取 / 重试 / HTML 解析
+│   │           ├── fetcher.py     # HTTP 抓取 / 重试 / HTML 解析 / SSRF 防护
 │   │           ├── llm.py         # LLM 分析（含加密字段解密）
-│   │           ├── email.py       # SMTP 通知（含加密字段解密）
+│   │           ├── email.py       # SMTP 通知（含加密字段解密，支持 SSL 端口 465）
 │   │           ├── engine.py      # 单次执行编排 + 触发站内通知
 │   │           └── scheduler.py   # APScheduler 调度 + 面试提醒 + 截止预警
 │   ├── spiders/                   # 爬虫配置模板（BOSS直聘、51job、拉勾、猎聘）
@@ -237,8 +242,8 @@ FallTracker/
 |------|------|------|
 | `GET` | `/backup/export` | 导出全量数据为 JSON 文件下载 |
 | `POST` | `/backup/import` | 上传 JSON 文件恢复数据（覆盖模式：先清空再导入） |
-| `POST` | `/backup/upload-to-cos` | 导出并上传到腾讯云 COS |
-| `GET` | `/backup/cos-list` | 列出 COS 上的备份文件 |
+| `POST` | `/backup/upload-to-cos` | 导出并上传到腾讯云 COS（手动备份，文件名含 `_manual_`） |
+| `GET` | `/backup/cos-list` | 列出 COS 上的备份文件（含自动/手动类型标识） |
 | `POST` | `/backup/restore-from-cos` | 从 COS 下载备份并恢复数据（覆盖模式） |
 | `POST` | `/backup/cos-delete` | 删除 COS 上的指定备份文件 |
 | `POST` | `/backup/cos-rename` | 重命名 COS 上的备份文件 |

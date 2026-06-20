@@ -101,6 +101,7 @@ class UserSettings(Base):
     cos_bucket = Column(String(200), nullable=True)
     cos_region = Column(String(100), nullable=True)
     cos_path = Column(String(500), nullable=True)
+    cos_auto_backup_hours = Column(Integer, nullable=True)  # 自动备份间隔（小时），None=关闭
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 

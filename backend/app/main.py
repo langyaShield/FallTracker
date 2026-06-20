@@ -92,6 +92,7 @@ _add_column_if_not_exists("user_settings", "cos_secret_key", "VARCHAR(500)")
 _add_column_if_not_exists("user_settings", "cos_bucket", "VARCHAR(200)")
 _add_column_if_not_exists("user_settings", "cos_region", "VARCHAR(100)")
 _add_column_if_not_exists("user_settings", "cos_path", "VARCHAR(500)")
+_add_column_if_not_exists("user_settings", "cos_auto_backup_hours", "INTEGER")
 _add_column_if_not_exists("users", "is_admin", "BOOLEAN DEFAULT 0")
 _add_column_if_not_exists("users", "is_disabled", "BOOLEAN DEFAULT 0")
 
@@ -116,6 +117,7 @@ async def lifespan(app: FastAPI):
         notify_upcoming_interviews,
         notify_upcoming_deadlines,
     )
+    from app.routers.backup import auto_backup_all_users
 
     scheduler = BackgroundScheduler(daemon=True)
     # 爬虫调度：每 60 秒检查一次到期的爬虫配置
@@ -124,6 +126,8 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(notify_upcoming_interviews, "interval", minutes=10, id="interview_reminder")
     # 截止日期预警：每小时检查一次 48h 内到期的投递
     scheduler.add_job(notify_upcoming_deadlines, "interval", hours=1, id="deadline_warning")
+    # COS 自动备份：每 30 分钟检查一次是否需要自动备份
+    scheduler.add_job(auto_backup_all_users, "interval", minutes=30, id="auto_backup")
     scheduler.start()
 
     yield

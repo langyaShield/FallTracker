@@ -145,6 +145,7 @@ def read_cos_settings(db: Session = Depends(get_db), current_user: User = Depend
         cos_bucket=s.cos_bucket or "",
         cos_region=s.cos_region or "",
         cos_path=s.cos_path or "backups/",
+        cos_auto_backup_hours=s.cos_auto_backup_hours,
     )
 
 
@@ -163,6 +164,9 @@ def update_cos_settings(
         # Encrypt sensitive fields before storage
         if field in ("cos_secret_id", "cos_secret_key") and value:
             value = encrypt_value(value)
+        # cos_auto_backup_hours: 0 means disabled, store as None
+        if field == "cos_auto_backup_hours" and value == 0:
+            value = None
         setattr(s, field, value)
     db.commit()
     db.refresh(s)
@@ -172,4 +176,5 @@ def update_cos_settings(
         cos_bucket=s.cos_bucket or "",
         cos_region=s.cos_region or "",
         cos_path=s.cos_path or "backups/",
+        cos_auto_backup_hours=s.cos_auto_backup_hours,
     )
