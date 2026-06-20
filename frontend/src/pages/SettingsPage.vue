@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Download, Upload, Refresh } from '@element-plus/icons-vue'
+import { Download, Upload, Refresh, Delete, Check } from '@element-plus/icons-vue'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/lib/error'
 import PageHeader from '@/components/PageHeader.vue'
@@ -57,7 +57,6 @@ const onKeyInput = () => {
 // ─── 数据备份（本地） ───
 const exporting = ref(false)
 const importing = ref(false)
-const importMode = ref<'merge' | 'overwrite'>('merge')
 const importResult = ref<Record<string, number> | null>(null)
 
 const exportData = async () => {
@@ -89,16 +88,14 @@ const handleImportFile = async (uploadFile: any) => {
   const file = uploadFile.raw || uploadFile
   if (!file) return
 
-  if (importMode.value === 'overwrite') {
-    try {
-      await ElMessageBox.confirm(
-        '覆盖导入将先删除当前所有数据，再导入备份文件中的数据。此操作不可撤销，确定继续？',
-        '危险操作',
-        { confirmButtonText: '确定覆盖', cancelButtonText: '取消', type: 'warning' },
-      )
-    } catch {
-      return
-    }
+  try {
+    await ElMessageBox.confirm(
+      '导入将先删除当前所有数据，再从备份文件恢复。此操作不可撤销，确定继续？',
+      '确认导入',
+      { confirmButtonText: '确定导入', cancelButtonText: '取消', type: 'warning' },
+    )
+  } catch {
+    return
   }
 
   importing.value = true
@@ -106,7 +103,6 @@ const handleImportFile = async (uploadFile: any) => {
   try {
     const formData = new FormData()
     formData.append('file', file)
-    formData.append('mode', importMode.value)
     const res = await api.post('/backup/import', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
@@ -208,7 +204,6 @@ const cosListing = ref(false)
 const cosRestoring = ref(false)
 const cosBackupList = ref<Array<{ key: string; size: number; last_modified: string }>>([])
 const selectedCosFile = ref('')
-const cosImportMode = ref<'merge' | 'overwrite'>('merge')
 const cosImportResult = ref<Record<string, number> | null>(null)
 
 const uploadToCos = async () => {
@@ -243,16 +238,14 @@ const restoreFromCos = async () => {
     return
   }
 
-  if (cosImportMode.value === 'overwrite') {
-    try {
-      await ElMessageBox.confirm(
-        '覆盖恢复将先删除当前所有数据，再从云端导入备份数据。此操作不可撤销，确定继续？',
-        '危险操作',
-        { confirmButtonText: '确定覆盖', cancelButtonText: '取消', type: 'warning' },
-      )
-    } catch {
-      return
-    }
+  try {
+    await ElMessageBox.confirm(
+      '恢复将先删除当前所有数据，再从云端备份恢复。此操作不可撤销，确定继续？',
+      '确认恢复',
+      { confirmButtonText: '确定恢复', cancelButtonText: '取消', type: 'warning' },
+    )
+  } catch {
+    return
   }
 
   cosRestoring.value = true
@@ -260,7 +253,6 @@ const restoreFromCos = async () => {
   try {
     const formData = new FormData()
     formData.append('file_key', selectedCosFile.value)
-    formData.append('mode', cosImportMode.value)
     const res = await api.post('/backup/restore-from-cos', formData)
     cosImportResult.value = res.data.imported
     ElMessage.success('从云端恢复数据成功')
@@ -285,9 +277,79 @@ const formatDate = (dateStr: string) => {
   }
 }
 
+// ─── COS 文件管理 ───
+const cosDeleting = ref(false)
+const cosRenaming = ref(false)
+const renameDialogVisible = ref(false)
+const renameTarget = ref('')
+const renameNewName = ref('')
+
+const deleteCosBackup = async (fileKey: string) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除备份文件 ${fileKey} 吗？此操作不可撤销。`,
+      '确认删除',
+      { confirmButtonText: '确定删除', cancelButtonText: '取消', type: 'warning' },
+    )
+  } catch {
+    return
+  }
+
+  cosDeleting.value = true
+  try {
+    const formData = new FormData()
+    formData.append('file_key', fileKey)
+    await api.post('/backup/cos-delete', formData)
+    ElMessage.success('备份已删除')
+    if (selectedCosFile.value === fileKey) {
+      selectedCosFile.value = ''
+    }
+    listCosBackups()
+  } catch (e: any) {
+    ElMessage.error(extractErrorMessage(e, '删除失败'))
+  } finally {
+    cosDeleting.value = false
+  }
+}
+
+const openRenameDialog = (fileKey: string) => {
+  renameTarget.value = fileKey
+  // 提取文件名（去掉路径前缀）
+  const parts = fileKey.split('/')
+  const filename = parts[parts.length - 1]
+  renameNewName.value = filename.replace('.json', '')
+  renameDialogVisible.value = true
+}
+
+const confirmRename = async () => {
+  if (!renameNewName.value.trim()) {
+    ElMessage.warning('请输入新文件名')
+    return
+  }
+
+  cosRenaming.value = true
+  try {
+    const formData = new FormData()
+    formData.append('file_key', renameTarget.value)
+    formData.append('new_name', renameNewName.value.trim())
+    await api.post('/backup/cos-rename', formData)
+    ElMessage.success('备份已重命名')
+    renameDialogVisible.value = false
+    listCosBackups()
+  } catch (e: any) {
+    ElMessage.error(extractErrorMessage(e, '重命名失败'))
+  } finally {
+    cosRenaming.value = false
+  }
+}
+
 onMounted(() => {
   fetchSettings()
-  fetchCosSettings()
+  fetchCosSettings().then(() => {
+    if (cosConfigured.value) {
+      listCosBackups()
+    }
+  })
 })
 </script>
 
@@ -349,13 +411,9 @@ onMounted(() => {
         <div class="backup-row">
           <div class="backup-info">
             <span class="backup-label">本地导入</span>
-            <span class="backup-hint">从本地 JSON 备份文件恢复数据</span>
+            <span class="backup-hint">从本地 JSON 备份文件恢复数据（将覆盖当前所有数据）</span>
           </div>
           <div class="import-controls">
-            <el-radio-group v-model="importMode" size="small">
-              <el-radio-button value="merge">合并导入</el-radio-button>
-              <el-radio-button value="overwrite">覆盖导入</el-radio-button>
-            </el-radio-group>
             <el-upload
               :auto-upload="false"
               :show-file-list="false"
@@ -367,15 +425,6 @@ onMounted(() => {
               </el-button>
             </el-upload>
           </div>
-        </div>
-
-        <div class="mode-hint">
-          <template v-if="importMode === 'merge'">
-            合并模式：保留现有数据，将备份数据追加进来
-          </template>
-          <template v-else>
-            覆盖模式：先删除当前所有数据，再导入备份数据（不可撤销）
-          </template>
         </div>
 
         <!-- 导入结果 -->
@@ -471,13 +520,9 @@ onMounted(() => {
         <div class="backup-row">
           <div class="backup-info">
             <span class="backup-label">从云端恢复</span>
-            <span class="backup-hint">从 COS 下载备份文件并恢复数据</span>
+            <span class="backup-hint">从 COS 下载备份文件并恢复数据（将覆盖当前所有数据）</span>
           </div>
           <div class="import-controls">
-            <el-radio-group v-model="cosImportMode" size="small">
-              <el-radio-button value="merge">合并</el-radio-button>
-              <el-radio-button value="overwrite">覆盖</el-radio-button>
-            </el-radio-group>
             <el-button
               :icon="Refresh"
               :loading="cosListing"
@@ -495,14 +540,34 @@ onMounted(() => {
 
         <!-- 云端备份列表 -->
         <div v-if="cosBackupList.length > 0" class="cos-list">
-          <el-table :data="cosBackupList" size="small" highlight-current-row @current-change="(row: any) => selectedCosFile = row?.key || ''">
-            <el-table-column type="radio" width="50" />
+          <el-table
+            :data="cosBackupList"
+            size="small"
+            highlight-current-row
+            :row-class-name="({ row }: any) => selectedCosFile === row.key ? 'selected-row' : ''"
+            @current-change="(row: any) => selectedCosFile = row?.key || ''"
+          >
+            <el-table-column width="50" align="center">
+              <template #default="{ row }">
+                <el-icon v-if="selectedCosFile === row.key" color="#16a34a" :size="18">
+                  <Check />
+                </el-icon>
+              </template>
+            </el-table-column>
             <el-table-column label="文件名" prop="key" min-width="200" />
             <el-table-column label="大小" width="100">
               <template #default="{ row }">{{ formatSize(row.size) }}</template>
             </el-table-column>
             <el-table-column label="修改时间" width="180">
               <template #default="{ row }">{{ formatDate(row.last_modified) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="140" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" size="small" @click="openRenameDialog(row.key)">重命名</el-button>
+                <el-button link type="danger" size="small" :loading="cosDeleting" @click="deleteCosBackup(row.key)">
+                  <el-icon><Delete /></el-icon>
+                </el-button>
+              </template>
             </el-table-column>
           </el-table>
           <div style="margin-top: 12px; text-align: right;">
@@ -533,6 +598,21 @@ onMounted(() => {
         </div>
       </div>
     </el-card>
+
+    <!-- 重命名对话框 -->
+    <el-dialog v-model="renameDialogVisible" title="重命名备份" width="400px">
+      <el-form label-width="80px">
+        <el-form-item label="新文件名">
+          <el-input v-model="renameNewName" placeholder="输入新文件名（不含路径）">
+            <template #append>.json</template>
+          </el-input>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="renameDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="cosRenaming" @click="confirmRename">确认</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -669,5 +749,13 @@ onMounted(() => {
 
 .cos-list {
   margin-top: 12px;
+}
+
+.cos-list :deep(.selected-row) {
+  background-color: #f0fdf4 !important;
+}
+
+.cos-list :deep(.selected-row td:first-child) {
+  border-left: 3px solid #16a34a;
 }
 </style>

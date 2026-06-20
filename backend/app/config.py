@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "*"  # Comma-separated origins, e.g. "http://localhost:5173,http://localhost:3000"
 
     class Config:
-        env_file = ".env"
+        env_file = "/app/backend/.env"
 
     @property
     def cors_origins_list(self) -> List[str]:

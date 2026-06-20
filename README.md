@@ -29,7 +29,7 @@
 
 ### 数据备份
 
-- **本地导出/导入** — 一键导出全量数据（投递、面试、简历、爬虫、通知等 8 张表）为 JSON 文件，支持合并导入和覆盖导入
+- **本地导出/导入** — 一键导出全量数据（投递、面试、简历、爬虫、通知等 8 张表）为 JSON 文件，支持覆盖导入
 - **腾讯云 COS 云端备份** — 配置 COS 参数后可一键上传备份到云端，从云端列出备份文件并选择恢复
 - **ID 重映射** — 导入时自动处理所有外键关联（resume_id、delivery_id、config_id），保证关系链不断
 
@@ -236,10 +236,12 @@ FallTracker/
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | `GET` | `/backup/export` | 导出全量数据为 JSON 文件下载 |
-| `POST` | `/backup/import` | 上传 JSON 文件恢复数据（支持 merge/overwrite 模式） |
+| `POST` | `/backup/import` | 上传 JSON 文件恢复数据（覆盖模式：先清空再导入） |
 | `POST` | `/backup/upload-to-cos` | 导出并上传到腾讯云 COS |
 | `GET` | `/backup/cos-list` | 列出 COS 上的备份文件 |
-| `POST` | `/backup/restore-from-cos` | 从 COS 下载备份并恢复数据 |
+| `POST` | `/backup/restore-from-cos` | 从 COS 下载备份并恢复数据（覆盖模式） |
+| `POST` | `/backup/cos-delete` | 删除 COS 上的指定备份文件 |
+| `POST` | `/backup/cos-rename` | 重命名 COS 上的备份文件 |
 
 ### admin 端点详情
 

@@ -27,7 +27,17 @@ interface CalendarEvent {
 
 const interviewEvents = ref<CalendarEvent[]>([])
 const deadlineEvents = ref<CalendarEvent[]>([])
-const calendarEvents = computed(() => [...interviewEvents.value, ...deadlineEvents.value])
+const calendarEvents = computed(() => {
+  const all = [...interviewEvents.value, ...deadlineEvents.value]
+  // 去重：按 id 去重，避免同一条记录出现多次
+  const seen = new Set<string>()
+  return all.filter(e => {
+    const key = String(e.id)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+})
 const currentDate = ref(new Date())
 const loading = ref(false)
 const dialogVisible = ref(false)
@@ -186,6 +196,8 @@ const goToDelivery = (deliveryId: number) => {
 }
 
 onMounted(() => {
+  interviewEvents.value = []
+  deadlineEvents.value = []
   fetchEvents()
   fetchDeliveries()
 })

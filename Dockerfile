@@ -19,24 +19,26 @@ FROM docker.m.daocloud.io/library/python:3.12-slim
 
 WORKDIR /app
 
-# Use Tencent Cloud mirrors for faster and reliable package downloads
-# Original deb sources are like "http://deb.debian.org/debian trixie main",
-# so we replace the whole host+path to avoid duplicated "debian/debian".
-RUN (sed -i 's|http://deb.debian.org/debian|https://mirrors.cloud.tencent.com/debian|g; s|http://security.debian.org/debian-security|https://mirrors.cloud.tencent.com/debian-security|g' /etc/apt/sources.list 2>/dev/null; \
-     sed -i 's|http://deb.debian.org/debian|https://mirrors.cloud.tencent.com/debian|g; s|http://security.debian.org/debian-security|https://mirrors.cloud.tencent.com/debian-security|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null) && \
-    apt-get update
+# Use Aliyun mirrors for faster and reliable package downloads
+RUN (sed -i 's|http://deb.debian.org/debian|https://mirrors.aliyun.com/debian|g; s|http://security.debian.org/debian-security|https://mirrors.aliyun.com/debian-security|g' /etc/apt/sources.list 2>/dev/null; \
+     sed -i 's|http://deb.debian.org/debian|https://mirrors.aliyun.com/debian|g; s|http://security.debian.org/debian-security|https://mirrors.aliyun.com/debian-security|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null) && \
+    apt-get update --allow-releaseinfo-change
 
 # Install system deps: tesseract (OCR), fonts, and cleanup
-RUN apt-get install -y --no-install-recommends \
-        tesseract-ocr \
-        tesseract-ocr-eng \
-        libglib2.0-0 \
-        libsm6 \
-        libxext6 \
-        libxrender-dev \
-        libgomp1 \
-        poppler-utils \
-        && \
+# Retry up to 3 times in case of transient mirror errors
+RUN for i in 1 2 3; do \
+        apt-get install -y --no-install-recommends \
+            tesseract-ocr \
+            tesseract-ocr-eng \
+            libglib2.0-0 \
+            libsm6 \
+            libxext6 \
+            libxrender-dev \
+            libgomp1 \
+            poppler-utils \
+        && break \
+        || { echo "Attempt $i failed, retrying..."; sleep 2; }; \
+    done && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -60,6 +62,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" || exit 1
 
-# Run with uvicorn — use chdir to make backend/ the working directory
-# so that internal imports (e.g. "from app.config import settings") resolve correctly
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--app-dir", "/app/backend"]
+# Run with uvicorn — single worker for 2-core server (1 core for app, 1 for system)
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--app-dir", "/app/backend"]

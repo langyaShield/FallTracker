@@ -176,14 +176,20 @@ def company_progress(
 
     items = []
     for d in deliveries:
-        days_in_status = (now - d.updated_at).days if d.updated_at else 0
+        if d.updated_at:
+            updated_at_aware = d.updated_at.replace(tzinfo=timezone.utc)
+            days_in_status = (now - updated_at_aware).days
+            updated_at_iso = updated_at_aware.isoformat()
+        else:
+            days_in_status = 0
+            updated_at_iso = None
         items.append({
             "id": d.id,
             "company": d.company,
             "position": d.position,
             "status": d.status,
             "days_in_status": days_in_status,
-            "updated_at": d.updated_at.isoformat() if d.updated_at else None,
+            "updated_at": updated_at_iso,
         })
 
     # 排序：delivered且停留天数长的排前面，其他按状态优先级
@@ -214,7 +220,7 @@ def interview_stats(db: Session = Depends(get_db), current_user: User = Depends(
         r = str(evt.round_number or 1)
         by_round[r] = by_round.get(r, 0) + 1
 
-    upcoming_count = sum(1 for e in events if e.scheduled_at and e.scheduled_at >= now)
+    upcoming_count = sum(1 for e in events if e.scheduled_at and e.scheduled_at.replace(tzinfo=timezone.utc) >= now)
 
     return {
         "total_interviews": len(events),

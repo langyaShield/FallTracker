@@ -135,7 +135,19 @@ const generateInviteCodes = async () => {
 
 const copyCode = async (code: string) => {
   try {
-    await navigator.clipboard.writeText(code)
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(code)
+    } else {
+      // Fallback for non-HTTPS contexts
+      const textarea = document.createElement('textarea')
+      textarea.value = code
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+    }
     ElMessage.success('已复制邀请码')
   } catch {
     ElMessage.error('复制失败')

@@ -2,6 +2,9 @@
 # FallTracker Docker Compose
 # Server: 2GB RAM, 2 CPU cores
 # Resource limits are tuned for this constraint.
+#
+# Build command (use this to limit build resource usage):
+#   docker compose build --memory=1g --cpus=1.5
 # ============================================================
 
 services:
@@ -17,8 +20,8 @@ services:
     mem_limit: 1g
     # Soft limit: container should stay at/below this under normal load
     mem_reservation: 512m
-    # CPU: use at most 1.5 cores
-    cpus: "1.5"
+    # CPU: use at most 1.0 cores (leave 1 core for system)
+    cpus: "1.0"
     # OOM priority: kill this container first if memory runs out
     oom_kill_disable: false
     # Memory swap: disabled (no swap file on this server)

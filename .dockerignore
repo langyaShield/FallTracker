@@ -16,7 +16,7 @@ backend/*.egg-info/
 # Env files (use docker-compose env_file instead)
 backend/.env
 frontend/.env.development
-frontend/.env.production
+# frontend/.env.production — required for Vite production build (API base URL)
 .env
 
 # OS
@@ -44,6 +44,18 @@ backend/uploads/
 
 # Scripts
 scripts/
+
+# Tests (not needed in production image)
+backend/tests/
+frontend/src/**/__tests__/
+
+# Documentation
+*.md
+docs/
+
+# Sessions / temp files
+sessions/
+*.jsonl
 
 # Docker files (keep Dockerfile and docker-compose)
 docker-compose*.yml
