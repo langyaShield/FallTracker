@@ -44,7 +44,7 @@ def _add_column_if_not_exists(table_name: str, column_name: str, column_type: st
     if not all(c.isalnum() or c == '_' for c in column_name):
         raise ValueError(f"Invalid column name: {column_name}")
     # Validate column_type: only allow known safe SQL type tokens
-    _SAFE_TYPE_RE = re.compile(r'^[A-Za-z0-9() ,_]+$')
+    _SAFE_TYPE_RE = re.compile(r"^[A-Za-z0-9() ,_']+$")
     if not _SAFE_TYPE_RE.match(column_type):
         raise ValueError(f"Invalid column type: {column_type}")
 
@@ -118,6 +118,7 @@ async def lifespan(app: FastAPI):
         notify_upcoming_deadlines,
     )
     from app.routers.backup import auto_backup_all_users
+    from app.routers.admin import cleanup_expired_invite_codes
 
     scheduler = BackgroundScheduler(daemon=True)
     # 爬虫调度：每 60 秒检查一次到期的爬虫配置
@@ -128,6 +129,8 @@ async def lifespan(app: FastAPI):
     scheduler.add_job(notify_upcoming_deadlines, "interval", hours=1, id="deadline_warning")
     # COS 自动备份：每 30 分钟检查一次是否需要自动备份
     scheduler.add_job(auto_backup_all_users, "interval", minutes=30, id="auto_backup")
+    # 过期邀请码清理：每小时检查一次并删除过期邀请码
+    scheduler.add_job(cleanup_expired_invite_codes, "interval", hours=1, id="invite_cleanup")
     scheduler.start()
 
     yield

@@ -160,11 +160,11 @@ def search_resumes(
 
 @router.post("", response_model=ResumeOut)
 def create_resume(
+    background_tasks: BackgroundTasks,
     name: str = Form(...),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    background_tasks: BackgroundTasks,
 ):
     file_bytes, ext = _validate_upload(file)
     filepath, _ = _save_file(file_bytes, ext)
@@ -200,11 +200,11 @@ def get_resume(resume_id: int, db: Session = Depends(get_db), current_user: User
 @router.put("/{resume_id}", response_model=ResumeOut)
 def update_resume(
     resume_id: int,
+    background_tasks: BackgroundTasks,
     name: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    background_tasks: BackgroundTasks,
 ):
     """更新简历：支持重命名和文件替换。替换文件后会自动重新OCR。"""
     item = db.query(Resume).filter(Resume.id == resume_id, Resume.user_id == current_user.id).first()
@@ -274,9 +274,9 @@ def batch_delete_resumes(
 @router.post("/{resume_id}/re-ocr")
 def re_ocr_resume(
     resume_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    background_tasks: BackgroundTasks,
 ):
     """重新触发OCR识别"""
     item = db.query(Resume).filter(Resume.id == resume_id, Resume.user_id == current_user.id).first()

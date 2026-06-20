@@ -67,15 +67,20 @@ const handleLogout = () => {
         </el-menu-item>
       </el-menu>
       <div class="sidebar-footer">
-        <NotificationCenter />
-        <div class="user-info">
-          <el-icon><User /></el-icon>
-          <span>{{ authStore.user?.username || '用户' }}</span>
+        <div class="sidebar-footer-top">
+          <NotificationCenter />
+          <span class="notification-label">通知</span>
         </div>
-        <el-button type="danger" text size="small" @click="handleLogout">
-          <el-icon><SwitchButton /></el-icon>
-          退出
-        </el-button>
+        <div class="sidebar-footer-bottom">
+          <div class="user-info" @click="router.push('/change-password')" title="修改密码">
+            <el-icon :size="18"><User /></el-icon>
+            <span>{{ authStore.user?.username || '用户' }}</span>
+          </div>
+          <el-button class="logout-btn" @click="handleLogout">
+            <el-icon><SwitchButton /></el-icon>
+            退出
+          </el-button>
+        </div>
       </div>
     </el-aside>
     <el-main class="main-content">
@@ -86,13 +91,16 @@ const handleLogout = () => {
 
 <style scoped>
 .main-layout {
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .sidebar {
   background: #1e3a5f;
   display: flex;
   flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .logo {
@@ -138,8 +146,28 @@ const handleLogout = () => {
 }
 
 .sidebar-footer {
-  padding: 16px;
+  padding: 12px 16px 16px;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sidebar-footer-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.notification-label {
+  color: #cbd5e1;
+  font-size: 13px;
+}
+
+.sidebar-footer-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .user-info {
@@ -148,18 +176,35 @@ const handleLogout = () => {
   gap: 8px;
   color: #cbd5e1;
   font-size: 14px;
-  margin-bottom: 12px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.2s;
 }
 
-.footer-actions {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+.user-info:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.logout-btn {
+  color: #fca5a5 !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 4px 8px !important;
+  font-size: 13px !important;
+  transition: color 0.2s;
+}
+
+.logout-btn:hover {
+  color: #f87171 !important;
+  background: rgba(248, 113, 113, 0.1) !important;
+  border-radius: 4px;
 }
 
 .main-content {
   background: #f1f5f9;
   padding: 24px;
+  height: 100vh;
+  overflow-y: auto;
 }
 </style>

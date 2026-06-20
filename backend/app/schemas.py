@@ -43,6 +43,21 @@ class UserOut(BaseModel):
     username: str
     is_admin: bool = False
     is_disabled: bool = False
+
+
+class ChangePasswordIn(BaseModel):
+    old_password: str
+    new_password: str
+    confirm_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password(cls, v):
+        if len(v) < 6:
+            raise ValueError("新密码长度不能少于6个字符")
+        if len(v) > 128:
+            raise ValueError("新密码长度不能超过128个字符")
+        return v
     class Config:
         from_attributes = True
 

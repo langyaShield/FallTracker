@@ -389,10 +389,16 @@ const deleteDelivery = async (id: number) => {
   }
 }
 
+// Drag feedback: briefly highlight card after successful drop
+const highlightedId = ref<number | null>(null)
+
 const updateStatus = async (item: Delivery, newStatus: string) => {
   try {
     await api.put(`/deliveries/${item.id}`, { status: newStatus })
     item.status = newStatus
+    // Flash green highlight on the card
+    highlightedId.value = item.id
+    setTimeout(() => { highlightedId.value = null }, 600)
     ElMessage.success('状态更新成功')
   } catch (e: unknown) {
     ElMessage.error(extractErrorMessage(e, '更新失败'))
@@ -456,78 +462,89 @@ onMounted(() => {
     </div>
 
     <div v-loading="loading" class="kanban-board" :class="{ 'batch-mode': batchMode }">
-      <div
-        v-for="col in STATUS_COLUMNS"
-        :key="col.key"
-        class="kanban-column"
-        :class="{ 'drag-over': dragOverColumn === col.key }"
-      >
-        <div class="column-header" :style="{ borderColor: col.color }">
-          <span class="column-title">{{ col.label }}</span>
-          <el-tag size="small" :style="{ backgroundColor: col.color + '20', color: col.color, borderColor: col.color }">
-            {{ groupedDeliveries[col.key]?.length || 0 }}
-          </el-tag>
+      <template v-if="!loading && deliveries.length === 0">
+        <div class="empty-board">
+          <div class="empty-icon">📋</div>
+          <h3>还没有投递记录</h3>
+          <p>点击右上角「新增投递」开始记录你的求职进展</p>
+          <el-button type="primary" :icon="Plus" @click="openAdd">新增第一条投递</el-button>
         </div>
+      </template>
+      <template v-else>
         <div
-          class="column-body"
-          @dragover="onDragOver($event, col.key)"
-          @dragleave="onDragLeave($event, col.key)"
-          @drop="onDrop($event, col.key)"
+          v-for="col in STATUS_COLUMNS"
+          :key="col.key"
+          class="kanban-column"
+          :class="{ 'drag-over': dragOverColumn === col.key }"
         >
+          <div class="column-header" :style="{ borderColor: col.color }">
+            <span class="column-title">{{ col.label }}</span>
+            <el-tag size="small" :style="{ backgroundColor: col.color + '20', color: col.color, borderColor: col.color }">
+              {{ groupedDeliveries[col.key]?.length || 0 }}
+            </el-tag>
+          </div>
           <div
-            v-for="item in groupedDeliveries[col.key]"
-            :key="item.id"
-            class="kanban-card"
-            :class="{
-              'card-urgent': getDeadlineUrgency(item.deadline) === 'urgent',
-              'card-warning': getDeadlineUrgency(item.deadline) === 'warning',
-              'card-expired': getDeadlineUrgency(item.deadline) === 'expired',
-              'card-selected': selectedIds.has(item.id),
-            }"
-            :style="{ borderLeftColor: urgencyBorderColor(getDeadlineUrgency(item.deadline)) }"
-            draggable="true"
-            @click.stop="onCardClick(item)"
-            @dragstart="onDragStart($event, item)"
-            @dragend="onDragEnd"
+            class="column-body"
+            @dragover="onDragOver($event, col.key)"
+            @dragleave="onDragLeave($event, col.key)"
+            @drop="onDrop($event, col.key)"
           >
-            <div class="card-top-row">
-              <el-checkbox
-                v-if="batchMode"
-                :model-value="selectedIds.has(item.id)"
-                @click.stop
-                @change="toggleSelect(item.id)"
-                class="batch-checkbox"
-              />
-              <div class="card-header">
-                <span class="company">{{ item.company }}</span>
-                <el-button
-                  v-if="!batchMode"
-                  text
-                  size="small"
-                  type="danger"
-                  @click.stop="deleteDelivery(item.id)"
-                  class="delete-btn"
-                >
-                  删除
-                </el-button>
+            <div
+              v-for="item in groupedDeliveries[col.key]"
+              :key="item.id"
+              class="kanban-card"
+              :class="{
+                'card-urgent': getDeadlineUrgency(item.deadline) === 'urgent',
+                'card-warning': getDeadlineUrgency(item.deadline) === 'warning',
+                'card-expired': getDeadlineUrgency(item.deadline) === 'expired',
+                'card-selected': selectedIds.has(item.id),
+                'card-highlighted': highlightedId === item.id,
+              }"
+              :style="{ borderLeftColor: urgencyBorderColor(getDeadlineUrgency(item.deadline)) }"
+              draggable="true"
+              @click.stop="onCardClick(item)"
+              @dragstart="onDragStart($event, item)"
+              @dragend="onDragEnd"
+            >
+              <div class="card-top-row">
+                <el-checkbox
+                  v-if="batchMode"
+                  :model-value="selectedIds.has(item.id)"
+                  @click.stop
+                  @change="toggleSelect(item.id)"
+                  class="batch-checkbox"
+                />
+                <div class="card-header">
+                  <span class="company">{{ item.company }}</span>
+                  <el-button
+                    v-if="!batchMode"
+                    text
+                    size="small"
+                    type="danger"
+                    @click.stop="deleteDelivery(item.id)"
+                    class="delete-btn"
+                  >
+                    删除
+                  </el-button>
+                </div>
               </div>
-            </div>
-            <div class="position">{{ item.position }}</div>
-            <div class="card-time">{{ formatDateTime(item.created_at) }}</div>
-            <div v-if="item.deadline" class="card-deadline" :class="{
-              'deadline-urgent': getDeadlineUrgency(item.deadline) === 'urgent',
-              'deadline-warning': getDeadlineUrgency(item.deadline) === 'warning',
-              'deadline-expired': getDeadlineUrgency(item.deadline) === 'expired',
-            }">
-              <span class="deadline-label">Deadline:</span> {{ formatDateTime(item.deadline) }}
-              <el-tag v-if="getDeadlineUrgency(item.deadline) === 'expired'" size="small" type="danger" class="expired-tag">已过期</el-tag>
-            </div>
-            <div class="card-tags">
-              <el-tag v-for="tag in item.tags" :key="tag" size="small" class="tag">{{ tag }}</el-tag>
+              <div class="position">{{ item.position }}</div>
+              <div class="card-time">{{ formatDateTime(item.created_at) }}</div>
+              <div v-if="item.deadline" class="card-deadline" :class="{
+                'deadline-urgent': getDeadlineUrgency(item.deadline) === 'urgent',
+                'deadline-warning': getDeadlineUrgency(item.deadline) === 'warning',
+                'deadline-expired': getDeadlineUrgency(item.deadline) === 'expired',
+              }">
+                <span class="deadline-label">Deadline:</span> {{ formatDateTime(item.deadline) }}
+                <el-tag v-if="getDeadlineUrgency(item.deadline) === 'expired'" size="small" type="danger" class="expired-tag">已过期</el-tag>
+              </div>
+              <div class="card-tags">
+                <el-tag v-for="tag in item.tags" :key="tag" size="small" class="tag">{{ tag }}</el-tag>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      </template>
     </div>
 
     <!-- Batch action bar -->
@@ -759,6 +776,17 @@ onMounted(() => {
   background: #eff6ff;
 }
 
+/* Drag-drop success highlight */
+.kanban-card.card-highlighted {
+  animation: flash-green 0.6s ease;
+}
+
+@keyframes flash-green {
+  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); }
+  50% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0.2); background: #f0fdf4; }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
 /* Urgency border colors */
 .kanban-card.card-urgent {
   border-left-color: #ef4444;
@@ -861,13 +889,14 @@ onMounted(() => {
 }
 
 .delete-btn {
-  visibility: hidden;
+  opacity: 0.4;
   padding: 2px 6px;
   font-size: 12px;
+  transition: opacity 0.2s;
 }
 
 .kanban-card:hover .delete-btn {
-  visibility: visible;
+  opacity: 1;
 }
 
 /* --- Batch Action Bar --- */
@@ -912,5 +941,33 @@ onMounted(() => {
 
 .batch-tag-input {
   width: 120px;
+}
+
+/* Empty board guide */
+.empty-board {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 20px;
+  text-align: center;
+}
+
+.empty-board .empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.empty-board h3 {
+  font-size: 18px;
+  color: #334155;
+  margin: 0 0 8px 0;
+}
+
+.empty-board p {
+  font-size: 14px;
+  color: #94a3b8;
+  margin: 0 0 24px 0;
 }
 </style>

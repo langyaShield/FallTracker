@@ -3,6 +3,7 @@
 
 查看所有注册用户基础信息，禁用/启用用户，生成/查看邀请码。
 """
+import logging
 import secrets
 import string
 from datetime import datetime, timedelta, timezone
@@ -172,3 +173,54 @@ def list_invite_codes(
             created_at=c.created_at,
         ))
     return result
+
+
+# ─────────────────────────────────────────────
+#  过期邀请码清理
+# ─────────────────────────────────────────────
+
+logger = logging.getLogger("falltracker.invite_cleanup")
+
+
+def cleanup_expired_invite_codes():
+    """删除所有已过期的邀请码（供定时任务调用）。"""
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        now = datetime.now(timezone.utc)
+        deleted = (
+            db.query(InviteCode)
+            .filter(
+                InviteCode.expires_at.isnot(None),
+                InviteCode.expires_at < now,
+            )
+            .delete(synchronize_session=False)
+        )
+        db.commit()
+        if deleted:
+            logger.info("Cleaned up %d expired invite codes", deleted)
+    except Exception:
+        db.rollback()
+        logger.exception("Failed to clean up expired invite codes")
+    finally:
+        db.close()
+
+
+@router.delete("/invite-codes/expired")
+def delete_expired_invite_codes(
+    db: Session = Depends(get_db),
+    _admin: User = Depends(get_admin_user),
+):
+    """手动清理所有已过期的邀请码。"""
+    now = datetime.now(timezone.utc)
+    deleted = (
+        db.query(InviteCode)
+        .filter(
+            InviteCode.expires_at.isnot(None),
+            InviteCode.expires_at < now,
+        )
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return {"deleted": deleted}

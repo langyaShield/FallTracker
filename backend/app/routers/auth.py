@@ -4,7 +4,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import User, InviteCode
-from app.schemas import UserCreate, UserOut, Token
+from app.schemas import UserCreate, UserOut, Token, ChangePasswordIn
 from app.auth import get_password_hash, verify_password, create_access_token, get_current_user
 from app.ratelimit import limiter
 
@@ -53,3 +53,24 @@ def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db
 @router.get("/me", response_model=UserOut)
 def me(current_user: User = Depends(get_current_user)):
     return current_user
+
+
+@router.put("/change-password")
+@limiter.limit("3/minute")
+def change_password(
+    request: Request,
+    data: ChangePasswordIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """修改当前用户密码。"""
+    if not verify_password(data.old_password, current_user.password_hash):
+        raise HTTPException(status_code=400, detail="旧密码不正确")
+    if data.new_password != data.confirm_password:
+        raise HTTPException(status_code=400, detail="两次输入的新密码不一致")
+    if data.old_password == data.new_password:
+        raise HTTPException(status_code=400, detail="新密码不能与旧密码相同")
+
+    current_user.password_hash = get_password_hash(data.new_password)
+    db.commit()
+    return {"detail": "密码修改成功"}

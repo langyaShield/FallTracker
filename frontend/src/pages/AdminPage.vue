@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Search, Lock, Unlock, Plus, CopyDocument } from '@element-plus/icons-vue'
+import { Search, Lock, Unlock, Plus, CopyDocument, Delete } from '@element-plus/icons-vue'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/lib/error'
 import PageHeader from '@/components/PageHeader.vue'
@@ -156,6 +156,33 @@ const copyCode = async (code: string) => {
 
 const unusedCount = computed(() => inviteCodes.value.filter(c => !c.is_used).length)
 
+const cleaningUp = ref(false)
+const cleanupExpiredCodes = async () => {
+  try {
+    await ElMessageBox.confirm(
+      '确定要删除所有已过期的邀请码吗？此操作不可撤销。',
+      '清理过期邀请码',
+      { confirmButtonText: '确定清理', cancelButtonText: '取消', type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  cleaningUp.value = true
+  try {
+    const res = await api.delete('/admin/invite-codes/expired')
+    if (res.data.deleted > 0) {
+      ElMessage.success(`已删除 ${res.data.deleted} 个过期邀请码`)
+    } else {
+      ElMessage.info('没有过期的邀请码需要清理')
+    }
+    fetchInviteCodes()
+  } catch (e: any) {
+    ElMessage.error(extractErrorMessage(e, '清理失败'))
+  } finally {
+    cleaningUp.value = false
+  }
+}
+
 onMounted(() => {
   fetchUsers()
   fetchInviteCodes()
@@ -262,7 +289,18 @@ onMounted(() => {
     <!-- 邀请码管理 -->
     <el-card class="table-card" style="margin-top: 20px">
       <template #header>
-        <span class="card-title">邀请码管理</span>
+        <div class="card-header-row">
+          <span class="card-title">邀请码管理</span>
+          <el-button
+            type="warning"
+            size="small"
+            :icon="Delete"
+            :loading="cleaningUp"
+            @click="cleanupExpiredCodes"
+          >
+            清理过期邀请码
+          </el-button>
+        </div>
       </template>
 
       <!-- 生成邀请码 -->
@@ -382,6 +420,12 @@ onMounted(() => {
   font-weight: 600;
   font-size: 16px;
   color: #1e3a5f;
+}
+
+.card-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .table-header {
