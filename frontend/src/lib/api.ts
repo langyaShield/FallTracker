@@ -5,6 +5,20 @@ const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000/api'
 
 const api = axios.create({
   baseURL: API_BASE,
+  paramsSerializer: {
+    serialize: (params) => {
+      // Support repeated keys for List[str] params (e.g. status=pending&status=applied)
+      const parts: string[] = []
+      for (const [key, value] of Object.entries(params)) {
+        if (value == null) continue
+        const values = Array.isArray(value) ? value : [value]
+        for (const v of values) {
+          parts.push(`${encodeURIComponent(key)}=${encodeURIComponent(v)}`)
+        }
+      }
+      return parts.join('&')
+    },
+  },
 })
 
 // 请求拦截器：自动附加 token

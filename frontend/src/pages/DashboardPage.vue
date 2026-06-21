@@ -85,48 +85,42 @@ const hasActiveFilters = computed(() => {
   return debouncedSearch.value !== '' || activeStatusFilters.value.size > 0
 })
 
-const filteredDeliveries = computed(() => {
-  let list = deliveries.value.slice()
+// Build query params from current filter state and fetch from backend
+const buildQueryParams = () => {
+  const params: Record<string, string | string[]> = {}
 
   // text search
-  const q = debouncedSearch.value.trim().toLowerCase()
+  const q = debouncedSearch.value.trim()
   if (q) {
-    list = list.filter((d) => {
-      return (
-        d.company.toLowerCase().includes(q) ||
-        d.position.toLowerCase().includes(q) ||
-        (d.tags || []).some((t) => t.toLowerCase().includes(q))
-      )
-    })
+    params.search = q
   }
 
-  // status filter
+  // status filter — backend supports List[str] via repeated query param
   if (activeStatusFilters.value.size > 0) {
-    list = list.filter((d) => activeStatusFilters.value.has(d.status))
+    params.status = Array.from(activeStatusFilters.value)
   }
 
   // sort
   const sort = sortOption.value
-  list.sort((a, b) => {
-    if (sort === 'created_at_desc') {
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    }
-    if (sort === 'created_at_asc') {
-      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-    }
-    if (sort === 'deadline_asc') {
-      const da = a.deadline ? new Date(a.deadline).getTime() : Infinity
-      const db = b.deadline ? new Date(b.deadline).getTime() : Infinity
-      return da - db
-    }
-    if (sort === 'company_asc') {
-      return a.company.localeCompare(b.company, 'zh-CN')
-    }
-    return 0
-  })
+  if (sort === 'created_at_desc') {
+    params.sort_by = 'created_at'
+    params.sort_order = 'desc'
+  } else if (sort === 'created_at_asc') {
+    params.sort_by = 'created_at'
+    params.sort_order = 'asc'
+  } else if (sort === 'deadline_asc') {
+    params.sort_by = 'deadline'
+    params.sort_order = 'asc'
+  } else if (sort === 'company_asc') {
+    params.sort_by = 'company'
+    params.sort_order = 'asc'
+  }
 
-  return list
-})
+  return params
+}
+
+// Deliveries returned from backend are already filtered/sorted
+const filteredDeliveries = computed(() => deliveries.value)
 
 // --- Batch operation state ---
 const batchMode = ref(false)
@@ -335,7 +329,8 @@ const groupedDeliveries = computed(() => {
 const fetchDeliveries = async () => {
   loading.value = true
   try {
-    const res = await api.get('/deliveries')
+    const params = buildQueryParams()
+    const res = await api.get('/deliveries', { params })
     deliveries.value = res.data || []
   } catch (e: unknown) {
     ElMessage.error(extractErrorMessage(e, '获取投递列表失败'))
@@ -343,6 +338,11 @@ const fetchDeliveries = async () => {
     loading.value = false
   }
 }
+
+// Re-fetch when search/sort/status filters change
+watch([debouncedSearch, sortOption, activeStatusFilters], () => {
+  fetchDeliveries()
+})
 
 const fetchResumes = async () => {
   try {
