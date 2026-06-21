@@ -1,46 +1,10 @@
 {
   "id": "51job",
   "name": "前程无忧",
-  "enabled": true,
-  "description": "前程无忧职位搜索 - 传统招聘网站，反爬虫相对宽松。",
+  "description": "前程无忧招聘网站，传统招聘平台，反爬相对宽松",
   "request": {
-    "url": "https://search.51job.com/list/010000,000000,0000,00,9,99,前端开发,2,1.html",
-    "method": "GET",
-    "headers": {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      "Referer": "https://www.51job.com/",
-      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-      "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
-    },
-    "encoding": "gbk",
-    "proxy": "",
-    "delay_range": [1.0, 3.0]
+    "url": "https://search.51job.com/list/010000,000000,0000,00,9,99,前端开发,2,1.html"
   },
-  "parse": {
-    "type": "css",
-    "item_selector": ".job-list-item",
-    "fields": [
-      {
-        "name": "company",
-        "selector": ".company_name",
-        "attr": "text"
-      },
-      {
-        "name": "position",
-        "selector": ".job_title",
-        "attr": "text"
-      },
-      {
-        "name": "link",
-        "selector": "a.job_title",
-        "attr": "href"
-      },
-      {
-        "name": "tags",
-        "selector": ".job-tags span",
-        "attr": "text",
-        "multiple": true
-      }
-    ]
-  }
+  "suggested_target": "前端开发全职岗位，应届生可投，薪资6k以上",
+  "site_tips": ["反爬较宽松，一般无需代理", "页面编码为GBK，AI解析时注意"]
 }

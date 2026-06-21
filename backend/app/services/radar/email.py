@@ -48,7 +48,7 @@ def _render_html(config_name: str, config_url: str, analysis: Dict[str, Any]) ->
     safe_matched = html.escape(analysis.get("matched_content", "")).replace("\n", "<br>")
     safe_reasoning = html.escape(analysis.get("reasoning", ""))
 
-    return f"""<html><body>
+    html_parts = [f"""<html><body>
 <h2>🔍 爬虫雷达 - 目标匹配通知</h2>
 <p><strong>爬虫名称:</strong> {safe_config_name}</p>
 <p><strong>目标链接:</strong> <a href="{safe_config_url}">{safe_config_url}</a></p>
@@ -59,10 +59,48 @@ def _render_html(config_name: str, config_url: str, analysis: Dict[str, Any]) ->
 <blockquote style="background:#f5f5f5;padding:12px;border-left:4px solid #4CAF50;">
 {safe_matched}
 </blockquote>
-<p><strong>推理过程:</strong> {safe_reasoning}</p>
+<p><strong>推理过程:</strong> {safe_reasoning}</p>"""]
+
+    # Add matched items table if available
+    matched_items = analysis.get("matched_items", [])
+    if matched_items:
+        items_rows = ""
+        for item in matched_items:
+            company = html.escape(item.get("company", ""))
+            position = html.escape(item.get("position", ""))
+            salary = html.escape(item.get("salary", "—"))
+            location = html.escape(item.get("location", "—"))
+            link = item.get("link", "")
+            link_html = f'<a href="{html.escape(link)}">查看</a>' if link else "—"
+            items_rows += f"""
+                <tr>
+                    <td style="padding:8px;border:1px solid #e2e8f0;">{company}</td>
+                    <td style="padding:8px;border:1px solid #e2e8f0;">{position}</td>
+                    <td style="padding:8px;border:1px solid #e2e8f0;">{salary}</td>
+                    <td style="padding:8px;border:1px solid #e2e8f0;">{location}</td>
+                    <td style="padding:8px;border:1px solid #e2e8f0;">{link_html}</td>
+                </tr>"""
+        html_parts.append(f"""
+            <h3 style="color:#1e3a5f;margin-top:20px;">匹配职位列表 ({len(matched_items)})</h3>
+            <table style="border-collapse:collapse;width:100%;font-size:14px;">
+                <thead>
+                    <tr style="background:#f8fafc;">
+                        <th style="padding:8px;border:1px solid #e2e8f0;text-align:left;">公司</th>
+                        <th style="padding:8px;border:1px solid #e2e8f0;text-align:left;">岗位</th>
+                        <th style="padding:8px;border:1px solid #e2e8f0;text-align:left;">薪资</th>
+                        <th style="padding:8px;border:1px solid #e2e8f0;text-align:left;">地点</th>
+                        <th style="padding:8px;border:1px solid #e2e8f0;text-align:left;">链接</th>
+                    </tr>
+                </thead>
+                <tbody>{items_rows}</tbody>
+            </table>""")
+
+    html_parts.append("""
 <hr>
 <p style="color:#999;font-size:12px;">由 FallTracker 爬虫雷达系统自动发送</p>
-</body></html>"""
+</body></html>""")
+
+    return "".join(html_parts)
 
 
 def send_notification_email(

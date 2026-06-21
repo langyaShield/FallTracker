@@ -1,44 +1,10 @@
 {
   "id": "regex-example",
   "name": "正则解析示例",
-  "enabled": true,
-  "description": "使用正则表达式解析的示例配置。适用于页面结构不规则或需要从 JavaScript 变量中提取数据的场景。",
+  "description": "适用于页面结构不规则或需要从JavaScript变量中提取数据的场景",
   "request": {
-    "url": "https://example.com/api/jobs",
-    "method": "GET",
-    "headers": {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      "Accept": "application/json, text/plain, */*"
-    },
-    "encoding": "utf-8",
-    "proxy": "",
-    "delay_range": [1.0, 2.0]
+    "url": "https://example.com/api/jobs"
   },
-  "parse": {
-    "type": "regex",
-    "item_selector": "window\\.__INITIAL_STATE__\\s*=\\s*(\\{[\\s\\S]*?\\});",
-    "fields": [
-      {
-        "name": "company",
-        "selector": "\"companyName\"\\s*:\\s*\"([^\"]+)\"",
-        "attr": "text"
-      },
-      {
-        "name": "position",
-        "selector": "\"jobName\"\\s*:\\s*\"([^\"]+)\"",
-        "attr": "text"
-      },
-      {
-        "name": "link",
-        "selector": "\"jobUrl\"\\s*:\\s*\"([^\"]+)\"",
-        "attr": "text"
-      },
-      {
-        "name": "tags",
-        "selector": "\"tags\"\\s*:\\s*\\[([^\\]]+)\\]",
-        "attr": "text",
-        "multiple": true
-      }
-    ]
-  }
+  "suggested_target": "前端开发岗位，适合秋招投递",
+  "site_tips": []
 }

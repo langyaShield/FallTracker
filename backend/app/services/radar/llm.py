@@ -1,14 +1,14 @@
 """
-LLM analysis for the radar crawler.
+LLM analysis for the radar crawler (AI-driven mode).
 
-负责：调用 LLM 分析抓取内容，解析 JSON 返回结果。
+负责：调用 LLM 分析抓取内容，同时完成目标匹配 + 结构化信息提取。
 """
 from __future__ import annotations
 
 import json
 import logging
 import re
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import httpx
 
@@ -22,13 +22,7 @@ logger = logging.getLogger("falltracker.radar.llm")
 
 
 def fetch_user_llm_config(user_id: int) -> Dict[str, Optional[str]]:
-    """Pre-fetch user LLM config in a single DB roundtrip.
-
-    Returns dict with keys `llm_api_key`, `llm_api_base`, `llm_model`,
-    falling back to global settings when user-level is not configured.
-    Pre-fetched once at the start of analysis to avoid opening a session
-    inside the LLM call path.
-    """
+    """Pre-fetch user LLM config in a single DB roundtrip."""
     db = SessionLocal()
     try:
         s = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
@@ -43,19 +37,32 @@ def fetch_user_llm_config(user_id: int) -> Dict[str, Optional[str]]:
 
 
 def _build_prompt(target_desc: str, content: str) -> str:
-    return f"""你是一个爬虫数据分析助手。请分析以下抓取内容中是否包含爬虫目标。
+    return f"""你是一个专业的网页内容分析助手。请分析以下从招聘网站抓取的页面内容，完成两个任务：
 
-[爬虫目标]
+1. **目标匹配**：判断页面中是否包含用户关注的目标内容
+2. **信息提取**：从页面中提取所有职位/岗位的结构化信息
+
+[监控目标]
 {target_desc}
 
-[抓取内容]
+[页面内容]
 {content}
 
-请分析上述抓取内容中是否包含爬虫目标。按以下 JSON 格式回复（不要包含其他内容，不要用 markdown 代码块）：
+请按以下 JSON 格式回复（不要包含其他内容，不要用 markdown 代码块）：
 {{
   "target_found": true 或 false,
-  "summary": "简要概述发现了什么",
-  "matched_content": "具体匹配到的内容片段（如果找到了）",
+  "summary": "简要概述页面内容和发现",
+  "matched_items": [
+    {{
+      "company": "公司名称",
+      "position": "岗位名称",
+      "salary": "薪资范围（如有）",
+      "location": "工作地点（如有）",
+      "link": "详情链接（如有）",
+      "tags": ["标签1", "标签2"],
+      "match_reason": "匹配原因"
+    }}
+  ],
   "reasoning": "分析推理过程"
 }}"""
 
@@ -70,7 +77,7 @@ def _call_llm_sync(prompt: str, api_key: str, api_base: str, model: str) -> str:
         "model": model,
         "messages": [{"role": "user", "content": prompt}],
         "temperature": 0.1,
-        "max_tokens": 2000,
+        "max_tokens": 4000,
     }
     with httpx.Client(timeout=60.0) as client:
         resp = client.post(
@@ -87,31 +94,34 @@ def _parse_llm_response(llm_text: str) -> Dict[str, Any]:
     """Try to extract a JSON object from the LLM response. Falls back to a typed default."""
     json_match = re.search(r"\{[\s\S]*\}", llm_text)
     if json_match:
-        parsed = json.loads(json_match.group())
+        try:
+            parsed = json.loads(json_match.group())
+        except json.JSONDecodeError:
+            parsed = {}
         return {
             "target_found": bool(parsed.get("target_found", False)),
             "summary": parsed.get("summary", ""),
-            "matched_content": parsed.get("matched_content", ""),
+            "matched_content": parsed.get("summary", ""),  # backward compat
+            "matched_items": parsed.get("matched_items", []),
             "reasoning": parsed.get("reasoning", ""),
         }
     return {
         "target_found": False,
         "summary": "LLM 返回格式异常",
         "matched_content": "",
+        "matched_items": [],
         "reasoning": llm_text[:500],
     }
 
 
 def analyze_with_llm(target_desc: str, content: str, llm_config: Dict[str, Optional[str]]) -> Dict[str, Any]:
-    """Send content + target to LLM and return a structured analysis dict.
-
-    `llm_config` should come from `fetch_user_llm_config` (caller pre-fetches once).
-    """
+    """Send content + target to LLM and return a structured analysis dict with matched_items."""
     if not target_desc.strip():
         return {
             "target_found": False,
             "summary": "未设置爬虫目标，跳过分析",
             "matched_content": "",
+            "matched_items": [],
             "reasoning": "",
         }
 
@@ -120,6 +130,7 @@ def analyze_with_llm(target_desc: str, content: str, llm_config: Dict[str, Optio
             "target_found": False,
             "summary": "页面内容获取失败，无法分析",
             "matched_content": "",
+            "matched_items": [],
             "reasoning": content,
         }
 
@@ -132,6 +143,7 @@ def analyze_with_llm(target_desc: str, content: str, llm_config: Dict[str, Optio
             "target_found": False,
             "summary": "LLM API Key 未配置",
             "matched_content": "",
+            "matched_items": [],
             "reasoning": "请在设置中配置 LLM API Key",
         }
 
@@ -146,5 +158,6 @@ def analyze_with_llm(target_desc: str, content: str, llm_config: Dict[str, Optio
             "target_found": False,
             "summary": f"LLM 分析异常: {str(e)[:100]}",
             "matched_content": "",
+            "matched_items": [],
             "reasoning": str(e)[:500],
         }

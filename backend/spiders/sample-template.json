@@ -1,43 +1,10 @@
 {
-  "id": "my-job-board",
-  "name": "我的招聘网站",
-  "enabled": true,
-  "description": "将此文件复制并修改为实际网站的爬取配置，替换 id、name、request.url 和 parse 规则即可",
+  "id": "sample-template",
+  "name": "通用模板",
+  "description": "通用爬虫模板，复制此文件并修改为实际网站的配置",
   "request": {
-    "url": "https://example.com/jobs?q=frontend",
-    "method": "GET",
-    "headers": {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    },
-    "encoding": "utf-8",
-    "proxy": "",
-    "delay_range": [1.0, 3.0]
+    "url": "https://example.com/jobs?q=frontend"
   },
-  "parse": {
-    "type": "css",
-    "item_selector": ".job-list-item",
-    "fields": [
-      {
-        "name": "company",
-        "selector": ".company-name",
-        "attr": "text"
-      },
-      {
-        "name": "position",
-        "selector": ".job-title",
-        "attr": "text"
-      },
-      {
-        "name": "link",
-        "selector": "a.job-link",
-        "attr": "href"
-      },
-      {
-        "name": "tags",
-        "selector": ".tag",
-        "attr": "text",
-        "multiple": true
-      }
-    ]
-  }
+  "suggested_target": "前端开发岗位，适合秋招投递",
+  "site_tips": []
 }

@@ -1,46 +1,10 @@
 {
   "id": "lagou",
   "name": "拉勾",
-  "enabled": true,
-  "description": "拉勾网职位搜索 - 拉勾已转为猎聘旗下，接口和页面结构可能变化。此配置为参考模板。",
+  "description": "拉勾网招聘网站，已转为猎聘旗下，页面结构可能变化",
   "request": {
-    "url": "https://www.lagou.com/jobs/list_前端开发?city=%E5%8C%97%E4%BA%AC&cl=false&fromSearch=true",
-    "method": "GET",
-    "headers": {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      "Referer": "https://www.lagou.com/",
-      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-      "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"
-    },
-    "encoding": "utf-8",
-    "proxy": "",
-    "delay_range": [2.0, 5.0]
+    "url": "https://www.lagou.com/jobs/list_前端开发?city=%E5%8C%97%E4%BA%AC&cl=false&fromSearch=true"
   },
-  "parse": {
-    "type": "css",
-    "item_selector": ".job-list-item",
-    "fields": [
-      {
-        "name": "company",
-        "selector": ".company-name",
-        "attr": "text"
-      },
-      {
-        "name": "position",
-        "selector": ".position-title",
-        "attr": "text"
-      },
-      {
-        "name": "link",
-        "selector": "a.position-title",
-        "attr": "href"
-      },
-      {
-        "name": "tags",
-        "selector": ".job-tags .tag",
-        "attr": "text",
-        "multiple": true
-      }
-    ]
-  }
+  "suggested_target": "前端开发岗位，互联网公司优先，薪资10k以上",
+  "site_tips": ["网站结构可能频繁变化", "建议定期检查页面是否可正常访问"]
 }

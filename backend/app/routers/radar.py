@@ -45,7 +45,7 @@ _SPIDERS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__fi
 
 @router.get("/templates")
 def list_templates():
-    """列出可用的爬虫模板，供前端快速创建使用。"""
+    """列出可用的爬虫模板，供前端快速创建使用。AI驱动模式：不再返回CSS选择器。"""
     templates: List[Dict[str, Any]] = []
     if not os.path.isdir(_SPIDERS_DIR):
         return templates
@@ -61,18 +61,9 @@ def list_templates():
                 "name": data.get("name", fname),
                 "description": data.get("description", ""),
                 "url": data.get("request", {}).get("url", ""),
-                "css_selector": data.get("parse", {}).get("item_selector", ""),
-                "encoding": data.get("request", {}).get("encoding", "utf-8"),
-                "notes": [],
+                "suggested_target": data.get("suggested_target", ""),
+                "site_tips": data.get("site_tips", []),
             })
-            # 提取注意事项
-            desc = data.get("description", "")
-            if "cookie" in desc.lower():
-                templates[-1]["notes"].append("需要从浏览器复制 Cookie")
-            if "代理" in desc or "proxy" in desc.lower():
-                templates[-1]["notes"].append("建议配置代理")
-            if "反爬" in desc:
-                templates[-1]["notes"].append("反爬较严格，可能需要多次尝试")
         except Exception:
             continue
     return templates
@@ -110,6 +101,7 @@ def create_config(
         target_description=data.target_description,
         email_to=data.email_to,
         is_active=data.is_active,
+        extra_headers=data.extra_headers,
     )
     db.add(config)
     db.commit()

@@ -18,7 +18,7 @@ from typing import Any, Dict
 from app.database import SessionLocal
 from app.models import CrawlerConfig, CrawlerResult, Notification
 from app.services.radar.email import send_notification_email
-from app.services.radar.fetcher import MAX_RAW_TEXT_CHARS, fetch_page
+from app.services.radar.fetcher import MAX_RAW_TEXT_CHARS, fetch_page  # fetch_page now takes (url, extra_headers)
 from app.services.radar.llm import analyze_with_llm, fetch_user_llm_config
 
 logger = logging.getLogger("falltracker.radar.engine")
@@ -113,6 +113,9 @@ def _persist_failure(config_id: int, error: Exception) -> None:
 def execute_crawler(config_id: int) -> None:
     """Execute a single crawler: fetch page, analyze with LLM, save result, optionally send email.
 
+    AI-driven mode: ignores css_selector, uses smart_extract for content,
+    LLM does both matching + structured extraction.
+
     事务策略：
     - 主 db session 仅负责 CrawlerResult + last_run_at 的原子写入
     - 通知写入使用独立 session（_create_notification_independent）
@@ -124,30 +127,44 @@ def execute_crawler(config_id: int) -> None:
         if not config or not config.is_active:
             return
 
-        # 1. Pre-fetch LLM config once (avoid opening session inside LLM call)
+        # 1. Pre-fetch LLM config once
         llm_config = fetch_user_llm_config(config.user_id)
 
-        # 2. Fetch page content
-        raw_text, status_code, error_reason = fetch_page(config.url, config.css_selector)
+        # 2. Parse extra_headers from JSON string
+        extra_headers = None
+        if config.extra_headers:
+            try:
+                extra_headers = json.loads(config.extra_headers)
+            except (json.JSONDecodeError, TypeError):
+                extra_headers = None
+
+        # 3. Fetch page content (AI-driven: no css_selector, use smart_extract)
+        raw_text, status_code, error_reason = fetch_page(config.url, extra_headers=extra_headers)
         if not raw_text:
             raw_text = f"(页面抓取失败) {error_reason}" if error_reason else "(页面抓取失败或内容为空)"
 
-        # 3. Run LLM analysis
+        # 4. Run LLM analysis (matching + structured extraction)
         analysis = analyze_with_llm(config.target_description, raw_text, llm_config)
         target_found = analysis.get("target_found", False)
+        matched_items = analysis.get("matched_items", [])
 
-        # 4. Save result (尚未 commit，等最后统一提交)
+        # 5. Save result
         result = CrawlerResult(
             config_id=config_id,
             raw_text=raw_text[:MAX_RAW_TEXT_CHARS],
             analysis_result=analysis,
             target_found=target_found,
             email_sent=False,
+            matched_items=matched_items if matched_items else None,
         )
         db.add(result)
 
-        # 5. Send email if target found and email configured
-        # 邮件发送是外部 IO，先执行，结果写入 result 对象
+        # 6. Update config status
+        config.last_run_at = datetime.now(timezone.utc)
+        config.last_error = None
+        config.consecutive_failures = 0
+
+        # 7. Send email if target found and email configured
         if target_found and config.email_to:
             email_sent = send_notification_email(
                 user_id=config.user_id,
@@ -158,30 +175,66 @@ def execute_crawler(config_id: int) -> None:
             )
             result.email_sent = email_sent
 
-        # 6. 更新 last_run_at 并统一 commit（原子写入）
-        config.last_run_at = datetime.now(timezone.utc)
+        # 8. Commit
         db.commit()
 
-        # 7. 通知在 commit 成功后创建（使用独立 session，不影响主事务）
+        # 9. Notification (after commit, using independent session)
         if target_found:
             if not _is_radar_hit_deduped(config.user_id, config.id):
                 summary = analysis.get("summary", "")[:120]
+                item_count = len(matched_items)
+                body_text = summary
+                if item_count > 0:
+                    body_text = f"发现 {item_count} 个匹配职位: {summary}"
                 _create_notification_independent(
                     user_id=config.user_id,
                     type_="radar_hit",
                     title=f"🔍 雷达命中: {config.name}",
-                    body=summary or f"已在 {config.url} 抓取到目标",
+                    body=body_text or f"已在 {config.url} 抓取到目标",
                     link=f"/radar?config={config.id}",
                 )
 
     except Exception as e:
         logger.exception("Crawler execution failed for config_id=%s: %s", config_id, e)
-        # 回滚主 session 的未提交变更
         try:
             db.rollback()
         except Exception:
             pass
-        # 使用独立 session 创建失败通知
+
+        # Update error tracking on config
+        try:
+            err_db = SessionLocal()
+            cfg = err_db.query(CrawlerConfig).filter(CrawlerConfig.id == config_id).first()
+            if cfg:
+                cfg.last_error = str(e)[:500]
+                cfg.consecutive_failures = (cfg.consecutive_failures or 0) + 1
+                cfg.last_run_at = datetime.now(timezone.utc)
+                # Auto-pause after 5 consecutive failures
+                if cfg.consecutive_failures >= 5:
+                    cfg.is_active = False
+                err_db.commit()
+                # Notify user about auto-pause
+                if cfg.consecutive_failures >= 5:
+                    _create_notification_independent(
+                        user_id=cfg.user_id,
+                        type_="crawler_failure",
+                        title=f"⚠️ 爬虫已自动暂停: {cfg.name}",
+                        body=f"连续失败 {cfg.consecutive_failures} 次，已自动暂停。请检查配置后手动启用。",
+                        link=f"/radar?config={config_id}",
+                    )
+        except Exception as save_err:
+            logger.warning("Failed to update error tracking: %s", save_err)
+            try:
+                err_db.rollback()
+            except Exception:
+                pass
+        finally:
+            try:
+                err_db.close()
+            except Exception:
+                pass
+
+        # Create failure notification
         try:
             user_id = _get_user_id_safe(config_id)
             if user_id:
@@ -194,7 +247,8 @@ def execute_crawler(config_id: int) -> None:
                 )
         except Exception as notif_err:
             logger.warning("Failed to create crawler-failure notification: %s", notif_err)
-        # 使用独立 session 持久化失败记录
+
+        # Persist failure record
         _persist_failure(config_id, e)
     finally:
         db.close()

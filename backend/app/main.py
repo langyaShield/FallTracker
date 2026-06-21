@@ -95,6 +95,10 @@ _add_column_if_not_exists("user_settings", "cos_path", "VARCHAR(500)")
 _add_column_if_not_exists("user_settings", "cos_auto_backup_hours", "INTEGER")
 _add_column_if_not_exists("users", "is_admin", "BOOLEAN DEFAULT 0")
 _add_column_if_not_exists("users", "is_disabled", "BOOLEAN DEFAULT 0")
+_add_column_if_not_exists("crawler_configs", "extra_headers", "TEXT")
+_add_column_if_not_exists("crawler_configs", "last_error", "VARCHAR(500)")
+_add_column_if_not_exists("crawler_configs", "consecutive_failures", "INTEGER")
+_add_column_if_not_exists("crawler_results", "matched_items", "TEXT")
 
 # Security: block startup with default SECRET_KEY
 if settings.SECRET_KEY == "change-me-to-a-random-secret-key":

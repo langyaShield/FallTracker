@@ -14,14 +14,27 @@ interface CrawlerConfig {
   user_id: number
   name: string
   url: string
-  css_selector: string
+  css_selector: string  // DEPRECATED
   interval_hours: number
   target_description: string
   email_to: string
   is_active: boolean
+  extra_headers: string | null
+  last_error: string | null
+  consecutive_failures: number
   last_run_at: string | null
   created_at: string
   updated_at: string
+}
+
+interface MatchedItem {
+  company: string | null
+  position: string | null
+  salary: string | null
+  location: string | null
+  link: string | null
+  tags: string[] | null
+  match_reason: string | null
 }
 
 interface CrawlerResult {
@@ -31,6 +44,7 @@ interface CrawlerResult {
   analysis_result: any
   target_found: boolean
   email_sent: boolean
+  matched_items: MatchedItem[] | null
   created_at: string
 }
 
@@ -39,9 +53,8 @@ interface CrawlerTemplate {
   name: string
   description: string
   url: string
-  css_selector: string
-  encoding: string
-  notes: string[]
+  suggested_target: string
+  site_tips: string[]
 }
 
 // ========== Tab State ==========
@@ -71,7 +84,7 @@ const isCustomMode = ref(false)
 const configForm = ref({
   name: '',
   url: '',
-  css_selector: '',
+  extra_headers: '',
   interval_hours: 24,
   target_description: '',
   email_to: '',
@@ -85,7 +98,7 @@ const editingConfig = ref<CrawlerConfig | null>(null)
 const editForm = ref({
   name: '',
   url: '',
-  css_selector: '',
+  extra_headers: '',
   interval_hours: 24,
   target_description: '',
   email_to: '',
@@ -113,7 +126,7 @@ function openWizard() {
   selectedTemplate.value = null
   isCustomMode.value = false
   configForm.value = {
-    name: '', url: '', css_selector: '',
+    name: '', url: '', extra_headers: '',
     interval_hours: 24, target_description: '',
     email_to: '', is_active: true,
   }
@@ -126,7 +139,7 @@ function selectTemplate(tpl: CrawlerTemplate) {
   // 自动填充模板信息
   configForm.value.name = tpl.name + '监控'
   configForm.value.url = tpl.url
-  configForm.value.css_selector = tpl.css_selector
+  configForm.value.target_description = tpl.suggested_target || ''
   wizardStep.value = 1
 }
 
@@ -134,7 +147,7 @@ function selectCustom() {
   selectedTemplate.value = null
   isCustomMode.value = true
   configForm.value = {
-    name: '', url: '', css_selector: '',
+    name: '', url: '', extra_headers: '',
     interval_hours: 24, target_description: '',
     email_to: '', is_active: true,
   }
@@ -178,7 +191,7 @@ function openEditDialog(config: CrawlerConfig) {
   editForm.value = {
     name: config.name,
     url: config.url,
-    css_selector: config.css_selector,
+    extra_headers: config.extra_headers || '',
     interval_hours: config.interval_hours,
     target_description: config.target_description,
     email_to: config.email_to,
@@ -318,8 +331,8 @@ onMounted(() => {
             >
               <div class="tpl-name">{{ tpl.name }}</div>
               <div class="tpl-desc">{{ tpl.description }}</div>
-              <div v-if="tpl.notes.length" class="tpl-notes">
-                <span v-for="note in tpl.notes" :key="note" class="tpl-note">{{ note }}</span>
+              <div v-if="tpl.site_tips.length" class="tpl-notes">
+                <span v-for="tip in tpl.site_tips" :key="tip" class="tpl-note">{{ tip }}</span>
               </div>
               <el-button type="primary" size="small" class="tpl-btn">
                 <el-icon><CaretRight /></el-icon> 使用此模板
@@ -378,6 +391,13 @@ onMounted(() => {
                   <span class="detail-label">上次检查</span>
                   <span class="detail-value time-value">{{ formatTime(config.last_run_at) }}</span>
                 </div>
+                <div v-if="config.last_error" class="detail-row error-row">
+                  <span class="detail-label">最近错误</span>
+                  <span class="detail-value error-value">{{ config.last_error }}</span>
+                </div>
+                <div v-if="config.consecutive_failures >= 3" class="detail-row warning-row">
+                  <el-tag type="warning" size="small">连续失败 {{ config.consecutive_failures }} 次</el-tag>
+                </div>
               </div>
             </el-card>
             <el-empty v-if="!configsLoading && configs.length === 0" description="暂无监控，点击上方模板快速创建" />
@@ -430,9 +450,9 @@ onMounted(() => {
                   v-model="configForm.target_description"
                   type="textarea"
                   :rows="3"
-                  placeholder="用大白话描述你想找什么，例如：&#10;- 月薪20K以上的前端开发岗位&#10;- 有远程办公机会的职位&#10;- 特定公司（如字节跳动）的招聘"
+                  placeholder="用自然语言描述你想监控的岗位，例如：&#10;- 前端开发实习岗位，薪资8k以上&#10;- Java后端开发，本科及以上学历&#10;- 字节跳动或腾讯的数据分析岗位"
                 />
-                <div class="form-tip">系统会用 AI 分析页面内容，判断是否匹配你的目标</div>
+                <div class="form-tip">AI 会自动分析页面内容，提取匹配的职位信息</div>
               </el-form-item>
               <el-form-item label="检查频率">
                 <el-select v-model="configForm.interval_hours" style="width: 200px">
@@ -451,9 +471,14 @@ onMounted(() => {
               <!-- 高级选项（折叠） -->
               <el-collapse v-model="showAdvanced" class="advanced-collapse">
                 <el-collapse-item title="高级选项（一般无需修改）" name="advanced">
-                  <el-form-item label="页面定位">
-                    <el-input v-model="configForm.css_selector" placeholder="留空则分析整页内容" />
-                    <div class="form-tip">CSS选择器，用于精确定位页面中的职位列表区域。不懂可留空</div>
+                  <el-form-item label="自定义请求头">
+                    <el-input
+                      v-model="configForm.extra_headers"
+                      type="textarea"
+                      :rows="3"
+                      placeholder='JSON格式，例如：&#10;{"Cookie": "your_cookie_value", "Referer": "https://example.com"}'
+                    />
+                    <div class="form-tip">部分网站需要Cookie才能访问，可从浏览器开发者工具复制</div>
                   </el-form-item>
                   <el-form-item label="立即启用">
                     <el-switch v-model="configForm.is_active" />
@@ -507,8 +532,13 @@ onMounted(() => {
             </el-form-item>
             <el-collapse class="advanced-collapse">
               <el-collapse-item title="高级选项" name="advanced">
-                <el-form-item label="页面定位">
-                  <el-input v-model="editForm.css_selector" placeholder="CSS选择器，留空分析整页" />
+                <el-form-item label="自定义请求头">
+                  <el-input
+                    v-model="editForm.extra_headers"
+                    type="textarea"
+                    :rows="3"
+                    placeholder='JSON格式，例如：&#10;{"Cookie": "your_cookie_value"}'
+                  />
                 </el-form-item>
                 <el-form-item label="启用监控">
                   <el-switch v-model="editForm.is_active" />
@@ -575,6 +605,30 @@ onMounted(() => {
             <div class="detail-section">
               <h4>检查时间</h4>
               <p>{{ formatTime(selectedResult.created_at) }}</p>
+            </div>
+            <!-- AI 提取结果 -->
+            <div v-if="selectedResult.matched_items && selectedResult.matched_items.length > 0" class="detail-section">
+              <h4>AI 提取结果 <el-tag size="small" type="success" style="margin-left: 8px">{{ selectedResult.matched_items.length }} 个匹配职位</el-tag></h4>
+              <el-table :data="selectedResult.matched_items" stripe size="small" style="width: 100%">
+                <el-table-column prop="company" label="公司" min-width="120">
+                  <template #default="{ row }">{{ row.company || '-' }}</template>
+                </el-table-column>
+                <el-table-column prop="position" label="岗位" min-width="120">
+                  <template #default="{ row }">{{ row.position || '-' }}</template>
+                </el-table-column>
+                <el-table-column prop="salary" label="薪资" width="100">
+                  <template #default="{ row }">{{ row.salary || '-' }}</template>
+                </el-table-column>
+                <el-table-column prop="location" label="地点" width="80">
+                  <template #default="{ row }">{{ row.location || '-' }}</template>
+                </el-table-column>
+                <el-table-column label="链接" width="60">
+                  <template #default="{ row }">
+                    <a v-if="row.link" :href="row.link" target="_blank" style="color: #409eff">查看</a>
+                    <span v-else>-</span>
+                  </template>
+                </el-table-column>
+              </el-table>
             </div>
             <div class="detail-section">
               <h4>AI 分析结果</h4>
@@ -775,6 +829,16 @@ onMounted(() => {
 .time-value {
   color: #94a3b8;
   font-size: 12px;
+}
+
+.error-row .error-value {
+  color: #ef4444;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.warning-row {
+  grid-column: 1 / -1;
 }
 
 /* ─── 向导 ─── */

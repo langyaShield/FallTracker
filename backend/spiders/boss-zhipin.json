@@ -1,47 +1,10 @@
 {
   "id": "boss-zhipin",
   "name": "BOSS直聘",
-  "enabled": true,
-  "description": "BOSS直聘职位搜索 - 注意：BOSS直聘反爬虫非常严格，强烈建议配置代理并设置延迟。需要先从浏览器复制 cookie 填入 headers。",
+  "description": "BOSS直聘招聘网站，需要Cookie，反爬严格，建议使用代理",
   "request": {
-    "url": "https://www.zhipin.com/web/geek/job?city=100010000&query=前端开发&page=1",
-    "method": "GET",
-    "headers": {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      "Referer": "https://www.zhipin.com/web/geek/job",
-      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-      "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-      "Cookie": "__zp_stoken__=请替换为实际的Cookie值"
-    },
-    "encoding": "utf-8",
-    "proxy": "",
-    "delay_range": [3.0, 6.0]
+    "url": "https://www.zhipin.com/web/geek/job?query=前端开发&city=100010000"
   },
-  "parse": {
-    "type": "css",
-    "item_selector": ".job-card-wrapper",
-    "fields": [
-      {
-        "name": "company",
-        "selector": ".company-name",
-        "attr": "text"
-      },
-      {
-        "name": "position",
-        "selector": ".job-name",
-        "attr": "text"
-      },
-      {
-        "name": "link",
-        "selector": "a.job-card-left",
-        "attr": "href"
-      },
-      {
-        "name": "tags",
-        "selector": ".job-tags span",
-        "attr": "text",
-        "multiple": true
-      }
-    ]
-  }
+  "suggested_target": "前端开发实习岗位，要求本科及以上学历，薪资8k以上",
+  "site_tips": ["需要从浏览器复制Cookie", "反爬较严格，可能需要多次尝试", "建议配置代理"]
 }

@@ -341,24 +341,37 @@ class NotificationMarkRead(BaseModel):
 # === Crawler System Schemas ===
 
 
+class MatchedItem(BaseModel):
+    """AI-extracted structured job information from a crawled page."""
+    company: Optional[str] = None
+    position: Optional[str] = None
+    salary: Optional[str] = None
+    location: Optional[str] = None
+    link: Optional[str] = None
+    tags: Optional[List[str]] = None
+    match_reason: Optional[str] = None
+
+
 class CrawlerConfigCreate(BaseModel):
     name: str
     url: str
-    css_selector: str = ""
+    css_selector: str = ""  # DEPRECATED, kept for backward compat
     interval_hours: int = 24
     target_description: str = ""
     email_to: str = ""
     is_active: bool = True
+    extra_headers: Optional[str] = None  # JSON string for custom headers
 
 
 class CrawlerConfigUpdate(BaseModel):
     name: Optional[str] = None
     url: Optional[str] = None
-    css_selector: Optional[str] = None
+    css_selector: Optional[str] = None  # DEPRECATED
     interval_hours: Optional[int] = None
     target_description: Optional[str] = None
     email_to: Optional[str] = None
     is_active: Optional[bool] = None
+    extra_headers: Optional[str] = None
 
 
 class CrawlerConfigOut(BaseModel):
@@ -371,6 +384,9 @@ class CrawlerConfigOut(BaseModel):
     target_description: str
     email_to: str
     is_active: bool
+    extra_headers: Optional[str] = None
+    last_error: Optional[str] = None
+    consecutive_failures: int = 0
     last_run_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
@@ -385,6 +401,7 @@ class CrawlerResultOut(BaseModel):
     analysis_result: Optional[dict]
     target_found: bool
     email_sent: bool
+    matched_items: Optional[List[MatchedItem]] = None
     created_at: datetime
     class Config:
         from_attributes = True

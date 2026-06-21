@@ -138,7 +138,10 @@ class CrawlerConfig(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(100), nullable=False)
     url = Column(String(500), nullable=False)
-    css_selector = Column(String(200), default="")          # optional CSS selector to target specific elements
+    css_selector = Column(String(200), default="")          # DEPRECATED: kept for backward compat, no longer used
+    extra_headers = Column(Text, nullable=True)              # JSON: custom request headers (e.g. Cookie)
+    last_error = Column(String(500), nullable=True)          # last error message
+    consecutive_failures = Column(Integer, default=0)        # auto-pause after 5 consecutive failures
     interval_hours = Column(Integer, default=24)            # run interval in hours
     target_description = Column(Text, default="")           # what the crawler is looking for
     email_to = Column(String(200), default="")              # recipient for notifications
@@ -158,4 +161,5 @@ class CrawlerResult(Base):
     analysis_result = Column(JSON, default=dict)             # LLM analysis result (JSON)
     target_found = Column(Boolean, default=False)            # whether the target was found
     email_sent = Column(Boolean, default=False)              # whether notification email was sent
+    matched_items = Column(JSON, nullable=True)              # AI-extracted structured job data
     created_at = Column(DateTime, server_default=func.now())
