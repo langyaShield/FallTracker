@@ -153,10 +153,13 @@ _NOISE_CLASS_KEYWORDS = {"ad", "banner", "popup", "modal", "cookie", "consent",
 
 def _is_noise_element(tag: Tag) -> bool:
     """Check if an element is likely noise (ad, popup, sidebar, etc.)."""
-    classes = " ".join(tag.get("class", []))
-    elem_id = tag.get("id", "")
-    combined = (classes + " " + elem_id).lower()
-    return any(kw in combined for kw in _NOISE_CLASS_KEYWORDS)
+    try:
+        classes = " ".join(tag.get("class", []) or [])
+        elem_id = tag.get("id", "") or ""
+        combined = (classes + " " + elem_id).lower()
+        return any(kw in combined for kw in _NOISE_CLASS_KEYWORDS)
+    except (AttributeError, TypeError):
+        return False
 
 
 def _tag_to_markdown(tag: Tag, depth: int = 0) -> str:
