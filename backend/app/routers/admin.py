@@ -224,3 +224,20 @@ def delete_expired_invite_codes(
     )
     db.commit()
     return {"deleted": deleted}
+
+
+@router.delete("/invite-codes/{code_id}")
+def delete_invite_code(
+    code_id: int,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(get_admin_user),
+):
+    """手动删除单个邀请码。已使用的邀请码不允许删除。"""
+    code = db.query(InviteCode).filter(InviteCode.id == code_id).first()
+    if not code:
+        raise HTTPException(status_code=404, detail="邀请码不存在")
+    if code.used_by is not None:
+        raise HTTPException(status_code=400, detail="该邀请码已被使用，无法删除")
+    db.delete(code)
+    db.commit()
+    return {"success": True, "message": f"已删除邀请码 {code.code}"}

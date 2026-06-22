@@ -183,6 +183,25 @@ const cleanupExpiredCodes = async () => {
   }
 }
 
+const deleteInviteCode = async (row: InviteCodeItem) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除邀请码 "${row.code}" 吗？此操作不可撤销。`,
+      '删除邀请码',
+      { confirmButtonText: '确定删除', cancelButtonText: '取消', type: 'warning' },
+    )
+  } catch {
+    return
+  }
+  try {
+    await api.delete(`/admin/invite-codes/${row.id}`)
+    ElMessage.success(`已删除邀请码 ${row.code}`)
+    fetchInviteCodes()
+  } catch (e: any) {
+    ElMessage.error(extractErrorMessage(e, '删除失败'))
+  }
+}
+
 onMounted(() => {
   fetchUsers()
   fetchInviteCodes()
@@ -361,6 +380,21 @@ onMounted(() => {
             {{ formatDate(row.created_at) }}
           </template>
         </el-table-column>
+        <el-table-column label="操作" width="80" fixed="right">
+          <template #default="{ row }">
+            <el-button
+              v-if="!row.is_used"
+              type="danger"
+              size="small"
+              text
+              :icon="Delete"
+              @click="deleteInviteCode(row)"
+            >
+              删除
+            </el-button>
+            <span v-else class="text-muted">已使用</span>
+          </template>
+        </el-table-column>
       </el-table>
     </el-card>
   </div>
@@ -469,6 +503,11 @@ onMounted(() => {
   padding: 2px 8px;
   border-radius: 4px;
   letter-spacing: 1px;
+}
+
+.text-muted {
+  font-size: 12px;
+  color: #94a3b8;
 }
 
 @media (max-width: 768px) {
