@@ -459,4 +459,16 @@ onMounted(fetchAll)
     grid-template-columns: 1fr;
   }
 }
+
+@media (max-width: 600px) {
+  .kpi-cards {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+
+  .charts-row {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+}
 </style>

@@ -225,4 +225,11 @@ onMounted(() => {
   font-family: monospace;
   font-size: 13px;
 }
+
+@media (max-width: 768px) {
+  .review-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+}
 </style>

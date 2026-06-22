@@ -93,7 +93,8 @@ const close = () => {
   <el-dialog
     :model-value="visible"
     title="CSV 批量导入"
-    width="700px"
+    width="90%"
+    style="max-width: 700px"
     @close="close"
   >
     <!-- Step 1: Upload -->

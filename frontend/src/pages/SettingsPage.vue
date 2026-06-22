@@ -807,4 +807,11 @@ onMounted(() => {
   color: #94a3b8;
   margin-top: 4px;
 }
+
+@media (max-width: 768px) {
+  .backup-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+}
 </style>

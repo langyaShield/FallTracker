@@ -396,4 +396,33 @@ onMounted(() => {
   gap: 8px;
   margin-bottom: 16px;
 }
+
+@media (max-width: 768px) {
+  .weekday-header {
+    font-size: 12px;
+    padding: 8px 2px;
+  }
+
+  .calendar-day {
+    min-height: 60px;
+    padding: 4px;
+  }
+
+  .day-number {
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .event-chip {
+    font-size: 10px;
+    padding: 1px 3px;
+    border-radius: 2px;
+  }
+
+  .calendar-legend {
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+}
 </style>

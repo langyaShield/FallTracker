@@ -378,4 +378,11 @@ onMounted(() => {
   font-size: 13px;
   color: #475569;
 }
+
+@media (max-width: 768px) {
+  .detail-body {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+}
 </style>

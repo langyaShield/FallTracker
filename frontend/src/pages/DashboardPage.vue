@@ -677,7 +677,8 @@ onMounted(() => {
 }
 
 .search-input {
-  width: 240px;
+  max-width: 240px;
+  width: 100%;
 }
 
 .status-filters {
@@ -691,7 +692,8 @@ onMounted(() => {
 }
 
 .sort-select {
-  width: 140px;
+  min-width: 100px;
+  max-width: 140px;
 }
 
 .filter-count {
@@ -969,5 +971,52 @@ onMounted(() => {
   font-size: 14px;
   color: #94a3b8;
   margin: 0 0 24px 0;
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  .search-input {
+    max-width: 100%;
+  }
+
+  .sort-select {
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .kanban-board {
+    height: calc(100dvh - 220px);
+  }
+
+  .kanban-board.batch-mode {
+    height: calc(100dvh - 340px);
+  }
+
+  .kanban-column {
+    min-width: 220px;
+  }
+
+  .kanban-card {
+    padding: 10px;
+  }
+
+  .batch-bar {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 10px 12px;
+    gap: 10px;
+  }
+
+  .batch-bar-actions {
+    width: 100%;
+  }
+
+  .batch-select {
+    width: 100%;
+  }
+
+  .batch-tag-input {
+    width: 100%;
+  }
 }
 </style>

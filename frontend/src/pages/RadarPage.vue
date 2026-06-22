@@ -996,4 +996,24 @@ onMounted(() => {
   white-space: pre-wrap;
   word-break: break-all;
 }
+
+@media (max-width: 768px) {
+  .config-detail {
+    grid-template-columns: 1fr;
+  }
+
+  .config-actions {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .config-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .template-cards {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+}
 </style>

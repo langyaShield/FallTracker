@@ -105,7 +105,8 @@ const handleSubmit = async () => {
 }
 
 .cp-card {
-  width: 480px;
+  max-width: 480px;
+  width: 90%;
   background: #fff;
   border-radius: 12px;
   padding: 32px;
@@ -127,5 +128,19 @@ const handleSubmit = async () => {
 
 .cp-form {
   margin-top: 8px;
+}
+
+@media (max-width: 768px) {
+  .change-password-page {
+    padding-top: 20px;
+  }
+
+  .cp-card {
+    padding: 20px 16px;
+  }
+
+  .cp-header h2 {
+    font-size: 18px;
+  }
 }
 </style>

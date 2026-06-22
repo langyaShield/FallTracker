@@ -243,7 +243,8 @@ const handleRegister = async () => {
 .auth-card {
   position: relative;
   z-index: 1;
-  width: 420px;
+  max-width: 420px;
+  width: 90%;
   padding: 48px 40px;
   background: rgba(255, 255, 255, 0.95);
   border-radius: 16px;
@@ -297,5 +298,29 @@ const handleRegister = async () => {
 
 .auth-link:hover {
   color: #d97706;
+}
+
+@media (max-width: 768px) {
+  .auth-card {
+    padding: 28px 20px;
+  }
+
+  .auth-title {
+    font-size: 22px;
+  }
+
+  .bg-shape-1, .bg-shape-2 {
+    width: 250px;
+    height: 250px;
+  }
+
+  .bg-shape-3, .bg-shape-4 {
+    width: 150px;
+    height: 150px;
+  }
+
+  .bg-shape-5, .bg-shape-6 {
+    display: none;
+  }
 }
 </style>

@@ -470,4 +470,15 @@ onMounted(() => {
   border-radius: 4px;
   letter-spacing: 1px;
 }
+
+@media (max-width: 768px) {
+  .stats-row {
+    gap: 8px;
+  }
+
+  .stat-card {
+    min-width: 100px;
+    padding: 10px;
+  }
+}
 </style>

@@ -28,6 +28,9 @@ interface NotificationItem {
 const router = useRouter()
 const unreadCount = ref(0)
 const items = ref<NotificationItem[]>([])
+
+// 移动端自适应 popover 宽度
+const popoverWidth = computed(() => Math.min(380, window.innerWidth - 24))
 const loading = ref(false)
 const panelOpen = ref(false)
 const total = ref(0)
@@ -128,7 +131,7 @@ onUnmounted(() => {
 
 <template>
   <el-popover
-    :width="380"
+    :width="popoverWidth"
     placement="bottom-end"
     trigger="click"
     v-model:visible="panelOpen"

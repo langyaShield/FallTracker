@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import { computed, markRaw } from 'vue'
+import { computed, markRaw, ref, onMounted, onUnmounted } from 'vue'
 import {
   Grid,
   Calendar,
@@ -13,6 +13,7 @@ import {
   User,
   SwitchButton,
   Key,
+  Fold,
 } from '@element-plus/icons-vue'
 import NotificationCenter from '@/components/NotificationCenter.vue'
 
@@ -21,6 +22,29 @@ const router = useRouter()
 const authStore = useAuthStore()
 
 const activeMenu = computed(() => route.path)
+
+// 响应式：检测移动端
+const MOBILE_BREAKPOINT = 768
+const isMobile = ref(window.innerWidth <= MOBILE_BREAKPOINT)
+const drawerVisible = ref(false)
+
+const handleResize = () => {
+  isMobile.value = window.innerWidth <= MOBILE_BREAKPOINT
+}
+
+onMounted(() => {
+  window.addEventListener('resize', handleResize)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize)
+})
+
+// 当前页面标题
+const pageTitle = computed(() => {
+  const item = menuItems.value.find(m => m.path === route.path)
+  return item?.title || 'FallTracker'
+})
 
 const menuItems = computed(() => {
   const items = [
@@ -42,11 +66,36 @@ const handleLogout = () => {
   authStore.logout()
   router.push('/login')
 }
+
+// 移动端点击菜单项后关闭抽屉
+const handleMenuSelect = () => {
+  if (isMobile.value) {
+    drawerVisible.value = false
+  }
+}
+
+const openDrawer = () => {
+  drawerVisible.value = true
+}
 </script>
 
 <template>
-  <el-container class="main-layout">
-    <el-aside width="220px" class="sidebar">
+  <!-- 移动端顶部导航栏 -->
+  <div v-if="isMobile" class="mobile-header">
+    <div class="mobile-header-left">
+      <button class="hamburger-btn" @click="openDrawer" aria-label="打开菜单">
+        <Fold />
+      </button>
+      <span class="mobile-title">{{ pageTitle }}</span>
+    </div>
+    <div class="mobile-header-right">
+      <NotificationCenter />
+    </div>
+  </div>
+
+  <el-container class="main-layout" :class="{ 'is-mobile': isMobile }">
+    <!-- 桌面端：固定侧边栏 -->
+    <el-aside v-if="!isMobile" width="220px" class="sidebar">
       <div class="logo">
         <span class="logo-icon">FT</span>
         <span class="logo-text">FallTracker</span>
@@ -83,18 +132,126 @@ const handleLogout = () => {
         </div>
       </div>
     </el-aside>
-    <el-main class="main-content">
+
+    <!-- 移动端：抽屉式侧边栏 -->
+    <el-drawer
+      v-if="isMobile"
+      v-model="drawerVisible"
+      direction="ltr"
+      :size="260"
+      :show-close="false"
+      class="mobile-drawer"
+    >
+      <template #header>
+        <div class="drawer-header">
+          <span class="logo-icon">FT</span>
+          <span class="logo-text">FallTracker</span>
+        </div>
+      </template>
+      <el-menu
+        :default-active="activeMenu"
+        router
+        class="drawer-menu"
+        background-color="#fff"
+        text-color="#334155"
+        active-text-color="#1e3a5f"
+        @select="handleMenuSelect"
+      >
+        <el-menu-item v-for="item in menuItems" :key="item.path" :index="item.path">
+          <el-icon>
+            <component :is="item.icon" />
+          </el-icon>
+          <span>{{ item.title }}</span>
+        </el-menu-item>
+      </el-menu>
+      <div class="drawer-footer">
+        <div class="drawer-user" @click="router.push('/change-password'); drawerVisible = false">
+          <el-icon :size="18"><User /></el-icon>
+          <span>{{ authStore.user?.username || '用户' }}</span>
+        </div>
+        <el-button class="drawer-logout" @click="handleLogout">
+          <el-icon><SwitchButton /></el-icon>
+          退出登录
+        </el-button>
+      </div>
+    </el-drawer>
+
+    <!-- 主内容区 -->
+    <el-main class="main-content" :class="{ 'mobile-content': isMobile }">
       <router-view />
     </el-main>
   </el-container>
 </template>
 
 <style scoped>
+/* 移动端顶部导航栏 */
+.mobile-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 52px;
+  background: #1e3a5f;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  z-index: 1000;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.mobile-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hamburger-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: transparent;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.2s;
+}
+
+.hamburger-btn:active {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.hamburger-btn svg {
+  width: 22px;
+  height: 22px;
+}
+
+.mobile-title {
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.mobile-header-right {
+  display: flex;
+  align-items: center;
+}
+
+/* 主布局 */
 .main-layout {
   height: 100vh;
   overflow: hidden;
 }
 
+.main-layout.is-mobile {
+  padding-top: 52px;
+  height: 100vh;
+}
+
+/* 桌面端侧边栏 */
 .sidebar {
   background: #1e3a5f;
   display: flex;
@@ -123,6 +280,7 @@ const handleLogout = () => {
   font-weight: 700;
   color: #fff;
   font-size: 14px;
+  flex-shrink: 0;
 }
 
 .logo-text {
@@ -201,10 +359,88 @@ const handleLogout = () => {
   border-radius: 4px;
 }
 
+/* 主内容区 */
 .main-content {
   background: #f1f5f9;
   padding: 24px;
   height: 100vh;
   overflow-y: auto;
+}
+
+.main-content.mobile-content {
+  padding: 12px;
+  height: calc(100vh - 52px);
+}
+
+/* 移动端抽屉样式 */
+.drawer-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0;
+}
+
+.drawer-header .logo-text {
+  color: #1e3a5f;
+}
+
+.drawer-menu .el-menu-item.is-active {
+  background: rgba(30, 58, 95, 0.08) !important;
+  font-weight: 600;
+}
+
+.drawer-footer {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 16px;
+  border-top: 1px solid #e2e8f0;
+  background: #fff;
+}
+
+.drawer-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #334155;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 8px;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  transition: background 0.2s;
+}
+
+.drawer-user:active {
+  background: #f1f5f9;
+}
+
+.drawer-logout {
+  width: 100%;
+  color: #ef4444 !important;
+  background: #fef2f2 !important;
+  border: none !important;
+}
+
+.drawer-logout:active {
+  background: #fee2e2 !important;
+}
+
+/* dvh 支持时修复高度 */
+@supports (height: 100dvh) {
+  .main-layout,
+  .sidebar,
+  .main-content {
+    height: 100dvh;
+  }
+
+  .main-layout.is-mobile {
+    height: 100dvh;
+  }
+
+  .main-content.mobile-content {
+    height: calc(100dvh - 52px);
+  }
 }
 </style>
