@@ -124,6 +124,7 @@ const importLabelMap: Record<string, string> = {
   interview_events: '面试事件',
   reviews: '面试复盘',
   notifications: '通知',
+  profile_fields: '个人信息库',
 }
 
 // ─── 腾讯云 COS 配置 ───

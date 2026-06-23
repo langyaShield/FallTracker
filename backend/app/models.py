@@ -163,3 +163,25 @@ class CrawlerResult(Base):
     email_sent = Column(Boolean, default=False)              # whether notification email was sent
     matched_items = Column(JSON, nullable=True)              # AI-extracted structured job data
     created_at = Column(DateTime, server_default=func.now())
+
+
+# === Profile System Models ===
+
+
+class ProfileField(Base):
+    """个人信息库：键值对 + 分组的灵活存储模型。
+
+    category 分类：basic（基本信息）、education（教育经历）、work（工作经历）
+    group_index：basic 固定为 0；education/work 每条记录一个唯一索引
+    """
+    __tablename__ = "profile_fields"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    category = Column(String(50), nullable=False, index=True)
+    field_key = Column(String(50), nullable=False)
+    field_value = Column(Text, default="")
+    group_index = Column(Integer, default=0)
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

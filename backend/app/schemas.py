@@ -492,3 +492,60 @@ class BatchTagsUpdate(BaseModel):
 
 class BatchIdsRequest(BaseModel):
     ids: List[int]
+
+
+# === Profile System Schemas ===
+
+
+class ProfileFieldCreate(BaseModel):
+    category: str
+    field_key: str
+    field_value: str = ""
+    group_index: int = 0
+    sort_order: int = 0
+
+
+class ProfileFieldUpdate(BaseModel):
+    field_value: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
+class ProfileFieldOut(BaseModel):
+    id: int
+    category: str
+    field_key: str
+    field_value: str
+    group_index: int
+    sort_order: int
+    class Config:
+        from_attributes = True
+
+
+class ProfileFieldItem(BaseModel):
+    """单条字段（用于批量保存）"""
+    field_key: str
+    field_value: str = ""
+    sort_order: int = 0
+
+
+class ProfileGroupSave(BaseModel):
+    """一个分组（如一条教育经历）"""
+    group_index: Optional[int] = None  # None 表示新增
+    fields: List[ProfileFieldItem]
+
+
+class ProfileBatchSave(BaseModel):
+    """批量保存某分类的所有分组"""
+    groups: List[ProfileGroupSave]
+
+
+class ProfileGroupOut(BaseModel):
+    """分组输出"""
+    group_index: int
+    fields: List[ProfileFieldOut]
+
+
+class ProfileCategoryOut(BaseModel):
+    """分类输出"""
+    category: str
+    groups: List[ProfileGroupOut]

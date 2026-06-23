@@ -23,6 +23,7 @@ from app.models import (
     Delivery,
     InterviewEvent,
     Notification,
+    ProfileField,
     Resume,
     Review,
     User,
@@ -183,6 +184,10 @@ def _gather_backup_data(db: Session, uid: int) -> dict:
     notifications = db.query(Notification).filter(Notification.user_id == uid).all()
     notification_list = [_model_to_dict(n) for n in notifications]
 
+    # ProfileField
+    profile_fields = db.query(ProfileField).filter(ProfileField.user_id == uid).all()
+    profile_field_list = [_model_to_dict(pf) for pf in profile_fields]
+
     return {
         "version": BACKUP_VERSION,
         "exported_at": datetime.now(timezone.utc).isoformat(),
@@ -194,6 +199,7 @@ def _gather_backup_data(db: Session, uid: int) -> dict:
         "interview_events": event_list,
         "reviews": review_list,
         "notifications": notification_list,
+        "profile_fields": profile_field_list,
     }
 
 
@@ -212,6 +218,7 @@ def _import_backup_data(db: Session, uid: int, data: dict) -> dict:
     delivery_ids = [row[0] for row in db.query(Delivery.id).filter(Delivery.user_id == uid).all()]
     config_ids = [row[0] for row in db.query(CrawlerConfig.id).filter(CrawlerConfig.user_id == uid).all()]
 
+    db.query(ProfileField).filter(ProfileField.user_id == uid).delete()
     db.query(Notification).filter(Notification.user_id == uid).delete()
     db.query(Review).filter(Review.user_id == uid).delete()
     if delivery_ids:
@@ -320,6 +327,14 @@ def _import_backup_data(db: Session, uid: int, data: dict) -> dict:
         db.add(obj)
     db.flush()
     stats["notifications"] = len(data.get("notifications", []))
+
+    # ── 9. ProfileField ──
+    for item in data.get("profile_fields", []):
+        prepared = _prepare_item(item, ProfileField)
+        obj = ProfileField(user_id=uid, **prepared)
+        db.add(obj)
+    db.flush()
+    stats["profile_fields"] = len(data.get("profile_fields", []))
 
     db.commit()
     return stats

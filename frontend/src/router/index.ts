@@ -51,6 +51,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '爬虫雷达' },
       },
       {
+        path: 'profile',
+        name: 'profile',
+        component: () => import('@/pages/ProfilePage.vue'),
+        meta: { title: '信息库' },
+      },
+      {
         path: 'resumes',
         name: 'resumes',
         component: () => import('@/pages/ResumesPage.vue'),

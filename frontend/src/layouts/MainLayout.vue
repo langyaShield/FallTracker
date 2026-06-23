@@ -14,14 +14,20 @@ import {
   SwitchButton,
   Key,
   Fold,
+  Postcard,
+  CopyDocument,
 } from '@element-plus/icons-vue'
 import NotificationCenter from '@/components/NotificationCenter.vue'
+import QuickCopyDrawer from '@/components/QuickCopyDrawer.vue'
 
 const route = useRoute()
 const router = useRouter()
 const authStore = useAuthStore()
 
 const activeMenu = computed(() => route.path)
+
+// 快捷复制抽屉
+const quickCopyVisible = ref(false)
 
 // 响应式：检测移动端
 const MOBILE_BREAKPOINT = 768
@@ -51,6 +57,7 @@ const menuItems = computed(() => {
     { path: '/dashboard', title: '投递大盘', icon: markRaw(Grid) },
     { path: '/calendar', title: '日历视图', icon: markRaw(Calendar) },
     { path: '/radar', title: '爬虫雷达', icon: markRaw(Aim) },
+    { path: '/profile', title: '信息库', icon: markRaw(Postcard) },
     { path: '/resumes', title: '简历管理', icon: markRaw(Document) },
     { path: '/reviews', title: '面试复盘', icon: markRaw(EditPen) },
     { path: '/statistics', title: '数据统计', icon: markRaw(TrendCharts) },
@@ -89,6 +96,9 @@ const openDrawer = () => {
       <span class="mobile-title">{{ pageTitle }}</span>
     </div>
     <div class="mobile-header-right">
+      <div class="mobile-quick-copy-btn" @click="quickCopyVisible = true" aria-label="快捷复制">
+        <CopyDocument style="width: 20px; height: 20px;" />
+      </div>
       <NotificationCenter />
     </div>
   </div>
@@ -119,6 +129,10 @@ const openDrawer = () => {
         <div class="sidebar-footer-top">
           <NotificationCenter />
           <span class="notification-label">通知</span>
+          <div class="quick-copy-trigger" @click="quickCopyVisible = true" title="快捷复制">
+            <el-icon :size="18"><CopyDocument /></el-icon>
+          </div>
+          <span class="notification-label">快捷复制</span>
         </div>
         <div class="sidebar-footer-bottom">
           <div class="user-info" @click="router.push('/change-password')" title="修改密码">
@@ -181,6 +195,9 @@ const openDrawer = () => {
       <router-view />
     </el-main>
   </el-container>
+
+  <!-- 快捷复制抽屉（全局可用） -->
+  <QuickCopyDrawer v-model="quickCopyVisible" />
 </template>
 
 <style scoped>
@@ -309,9 +326,10 @@ const openDrawer = () => {
 }
 
 .sidebar-footer-top {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 1fr auto 1fr;
   align-items: center;
-  gap: 10px;
+  gap: 6px 8px;
   padding-bottom: 12px;
   margin-bottom: 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
@@ -320,6 +338,41 @@ const openDrawer = () => {
 .notification-label {
   color: #cbd5e1;
   font-size: 13px;
+}
+
+/* 桌面端快捷复制触发按钮 */
+.quick-copy-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  color: #cbd5e1;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.2s, color 0.2s;
+}
+
+.quick-copy-trigger:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #f59e0b;
+}
+
+/* 移动端快捷复制按钮 */
+.mobile-quick-copy-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  color: #fff;
+  cursor: pointer;
+  border-radius: 6px;
+  margin-right: 4px;
+}
+
+.mobile-quick-copy-btn:active {
+  background: rgba(255, 255, 255, 0.15);
 }
 
 .sidebar-footer-bottom {
