@@ -202,10 +202,6 @@ class InterviewEventWithDeliveryOut(InterviewEventOut):
     position: Optional[str] = None
 
 
-class ResumeCreate(BaseModel):
-    name: str
-
-
 class ResumeUpdate(BaseModel):
     name: Optional[str] = None
 
@@ -253,50 +249,6 @@ class ReviewOut(BaseModel):
     updated_at: datetime
     class Config:
         from_attributes = True
-
-
-# --- Quick Import & Manual Add Schemas ---
-
-
-class QuickImportRequest(BaseModel):
-    urls: List[str]
-
-
-class QuickImportItem(BaseModel):
-    url: str
-    title: str = ""
-    description: str = ""
-    company: str = ""
-    position: str = ""
-    tags: List[str] = []
-    error: Optional[str] = None
-
-
-class QuickImportResponse(BaseModel):
-    results: List[QuickImportItem]
-
-
-class QuickImportSaveItem(BaseModel):
-    url: str
-    company: str
-    position: str
-    tags: List[str] = []
-
-
-class QuickImportSaveRequest(BaseModel):
-    items: List[QuickImportSaveItem]
-
-
-class QuickImportSaveResponse(BaseModel):
-    saved: int
-    duplicates: int
-
-
-class ManualAddRequest(BaseModel):
-    company: str
-    position: str
-    link: str
-    tags: List[str] = []
 
 
 class UserSettingsUpdate(BaseModel):
@@ -405,12 +357,6 @@ class CrawlerResultOut(BaseModel):
     created_at: datetime
     class Config:
         from_attributes = True
-
-
-class CrawlerResultDetail(CrawlerResultOut):
-    """Extended result with crawler config details."""
-    config_name: str = ""
-    config_url: str = ""
 
 
 # === Email Settings Schemas ===

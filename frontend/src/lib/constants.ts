@@ -1,4 +1,4 @@
-export interface StatusOption {
+interface StatusOption {
   key: string
   label: string
   color: string
@@ -97,7 +97,7 @@ export const PROFILE_WORK_FIELDS: Array<{ key: string; label: string }> = [
 ]
 
 /** 所有字段的中文标签映射 */
-export const PROFILE_FIELD_LABEL_MAP: Record<string, string> = {
+const PROFILE_FIELD_LABEL_MAP: Record<string, string> = {
   name: '姓名',
   gender: '性别',
   birthday: '出生日期',
@@ -132,24 +132,4 @@ export const PROFILE_FIELD_LABEL_MAP: Record<string, string> = {
 /** 获取字段中文标签，未知字段返回 key 本身 */
 export function getProfileFieldLabel(key: string): string {
   return PROFILE_FIELD_LABEL_MAP[key] || key
-}
-
-/** CSV 导入表头映射：中文 -> 英文字段名 */
-export const CSV_HEADER_MAP: Record<string, string> = {
-  公司: 'company',
-  company: 'company',
-  岗位: 'position',
-  position: 'position',
-  状态: 'status',
-  status: 'status',
-  链接: 'link',
-  JD链接: 'link',
-  link: 'link',
-  标签: 'tags',
-  tags: 'tags',
-  截止日期: 'deadline',
-  deadline: 'deadline',
-  JD描述: 'jd_text',
-  jd_text: 'jd_text',
-  描述: 'jd_text',
 }

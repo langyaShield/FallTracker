@@ -107,7 +107,7 @@ const router = createRouter({
   routes,
 })
 
-router.beforeEach((to, _from, next) => {
+router.beforeEach(async (to, _from, next) => {
   const authStore = useAuthStore()
   const isPublic = (PUBLIC_PATHS as readonly string[]).includes(to.path)
 
@@ -116,6 +116,14 @@ router.beforeEach((to, _from, next) => {
   } else if (!isPublic && !authStore.token) {
     next('/login')
   } else {
+    // 页面刷新后 token 存在但 user 为空时，自动获取用户信息
+    if (!isPublic && authStore.token && !authStore.user) {
+      try {
+        await authStore.fetchMe()
+      } catch {
+        // fetchMe 失败（token 过期等），auth 拦截器会处理跳转
+      }
+    }
     next()
   }
 })

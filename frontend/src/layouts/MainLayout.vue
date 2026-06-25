@@ -156,6 +156,7 @@ const openDrawer = () => {
       direction="ltr"
       :size="260"
       :show-close="false"
+      :teleported="false"
       class="mobile-drawer"
     >
       <template #header>
@@ -164,31 +165,33 @@ const openDrawer = () => {
           <span class="logo-text">FallTracker</span>
         </div>
       </template>
-      <el-menu
-        :default-active="activeMenu"
-        router
-        class="drawer-menu"
-        background-color="#fff"
-        text-color="#334155"
-        active-text-color="#1e3a5f"
-        @select="handleMenuSelect"
-      >
-        <el-menu-item v-for="item in menuItems" :key="item.path" :index="item.path">
-          <el-icon>
-            <component :is="item.icon" />
-          </el-icon>
-          <span>{{ item.title }}</span>
-        </el-menu-item>
-      </el-menu>
-      <div class="drawer-footer">
-        <div class="drawer-user" @click="router.push('/change-password'); drawerVisible = false">
-          <el-icon :size="18"><User /></el-icon>
-          <span>{{ authStore.user?.username || '用户' }}</span>
+      <div class="drawer-body">
+        <el-menu
+          :default-active="activeMenu"
+          router
+          class="drawer-menu"
+          background-color="#fff"
+          text-color="#334155"
+          active-text-color="#1e3a5f"
+          @select="handleMenuSelect"
+        >
+          <el-menu-item v-for="item in menuItems" :key="item.path" :index="item.path">
+            <el-icon>
+              <component :is="item.icon" />
+            </el-icon>
+            <span>{{ item.title }}</span>
+          </el-menu-item>
+        </el-menu>
+        <div class="drawer-footer">
+          <div class="drawer-user" @click="router.push('/change-password'); drawerVisible = false">
+            <el-icon :size="18"><User /></el-icon>
+            <span>{{ authStore.user?.username || '用户' }}</span>
+          </div>
+          <el-button class="drawer-logout" @click="handleLogout">
+            <el-icon><SwitchButton /></el-icon>
+            退出登录
+          </el-button>
         </div>
-        <el-button class="drawer-logout" @click="handleLogout">
-          <el-icon><SwitchButton /></el-icon>
-          退出登录
-        </el-button>
       </div>
     </el-drawer>
 
@@ -439,19 +442,42 @@ const openDrawer = () => {
   color: #1e3a5f;
 }
 
+.drawer-body {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* 覆盖 el-drawer 内部 body 的 overflow，确保自定义滚动容器生效 */
+:deep(.mobile-drawer .el-drawer__body) {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+:deep(.mobile-drawer .el-drawer__header) {
+  margin-bottom: 0;
+  padding: 16px;
+}
+
+.drawer-menu {
+  flex: 1;
+}
+
 .drawer-menu .el-menu-item.is-active {
   background: rgba(30, 58, 95, 0.08) !important;
   font-weight: 600;
 }
 
 .drawer-footer {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
   padding: 16px;
   border-top: 1px solid #e2e8f0;
   background: #fff;
+  flex-shrink: 0;
 }
 
 .drawer-user {

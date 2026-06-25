@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
-  Plus, Document, View, Delete, Edit, Search, Download,
+  Plus, View, Delete, Edit, Search, Download,
   RefreshRight, Check, Close, Sort
 } from '@element-plus/icons-vue'
 import api from '@/lib/api'
