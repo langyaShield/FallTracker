@@ -57,6 +57,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '信息库' },
       },
       {
+        path: 'bookmarks',
+        name: 'bookmarks',
+        component: () => import('@/pages/BookmarksPage.vue'),
+        meta: { title: '常用网站' },
+      },
+      {
         path: 'resumes',
         name: 'resumes',
         component: () => import('@/pages/ResumesPage.vue'),

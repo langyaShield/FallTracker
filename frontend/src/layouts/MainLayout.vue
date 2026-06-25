@@ -16,6 +16,7 @@ import {
   Fold,
   Postcard,
   CopyDocument,
+  Star,
 } from '@element-plus/icons-vue'
 import NotificationCenter from '@/components/NotificationCenter.vue'
 import QuickCopyDrawer from '@/components/QuickCopyDrawer.vue'
@@ -58,6 +59,7 @@ const menuItems = computed(() => {
     { path: '/calendar', title: '日历视图', icon: markRaw(Calendar) },
     { path: '/radar', title: '爬虫雷达', icon: markRaw(Aim) },
     { path: '/profile', title: '信息库', icon: markRaw(Postcard) },
+    { path: '/bookmarks', title: '常用网站', icon: markRaw(Star) },
     { path: '/resumes', title: '简历管理', icon: markRaw(Document) },
     { path: '/reviews', title: '面试复盘', icon: markRaw(EditPen) },
     { path: '/statistics', title: '数据统计', icon: markRaw(TrendCharts) },

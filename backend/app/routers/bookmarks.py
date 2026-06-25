@@ -1,0 +1,87 @@
+"""常用网站书签：CRUD 操作，支持分类管理。"""
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from app.auth import get_current_user
+from app.database import get_db
+from app.models import Bookmark, User
+from app.schemas import BookmarkCreate, BookmarkOut, BookmarkUpdate
+
+router = APIRouter(prefix="/bookmarks", tags=["bookmarks"])
+
+
+@router.get("", response_model=list[BookmarkOut])
+def list_bookmarks(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取当前用户所有书签，按 sort_order 和创建时间排序。"""
+    bookmarks = (
+        db.query(Bookmark)
+        .filter(Bookmark.user_id == current_user.id)
+        .order_by(Bookmark.sort_order, Bookmark.created_at)
+        .all()
+    )
+    return [BookmarkOut.model_validate(b) for b in bookmarks]
+
+
+@router.post("", response_model=BookmarkOut)
+def create_bookmark(
+    data: BookmarkCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """创建新书签。"""
+    bookmark = Bookmark(
+        user_id=current_user.id,
+        title=data.title,
+        url=data.url,
+        category=data.category,
+        icon=data.icon,
+        sort_order=data.sort_order,
+    )
+    db.add(bookmark)
+    db.commit()
+    db.refresh(bookmark)
+    return BookmarkOut.model_validate(bookmark)
+
+
+@router.put("/{bookmark_id}", response_model=BookmarkOut)
+def update_bookmark(
+    bookmark_id: int,
+    data: BookmarkUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """更新书签。"""
+    bookmark = (
+        db.query(Bookmark)
+        .filter(Bookmark.id == bookmark_id, Bookmark.user_id == current_user.id)
+        .first()
+    )
+    if not bookmark:
+        raise HTTPException(status_code=404, detail="书签不存在")
+    for field_name, value in data.model_dump(exclude_unset=True).items():
+        setattr(bookmark, field_name, value)
+    db.commit()
+    db.refresh(bookmark)
+    return BookmarkOut.model_validate(bookmark)
+
+
+@router.delete("/{bookmark_id}")
+def delete_bookmark(
+    bookmark_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """删除书签。"""
+    bookmark = (
+        db.query(Bookmark)
+        .filter(Bookmark.id == bookmark_id, Bookmark.user_id == current_user.id)
+        .first()
+    )
+    if not bookmark:
+        raise HTTPException(status_code=404, detail="书签不存在")
+    db.delete(bookmark)
+    db.commit()
+    return {"success": True, "message": f"已删除书签 {bookmark.title}"}

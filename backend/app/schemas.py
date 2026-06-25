@@ -549,3 +549,34 @@ class ProfileCategoryOut(BaseModel):
     """分类输出"""
     category: str
     groups: List[ProfileGroupOut]
+
+
+# === Bookmark Schemas ===
+
+
+class BookmarkCreate(BaseModel):
+    title: str
+    url: str
+    category: str = ""
+    icon: str = ""
+    sort_order: int = 0
+
+
+class BookmarkUpdate(BaseModel):
+    title: Optional[str] = None
+    url: Optional[str] = None
+    category: Optional[str] = None
+    icon: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
+class BookmarkOut(BaseModel):
+    id: int
+    title: str
+    url: str
+    category: str
+    icon: str
+    sort_order: int
+    created_at: Optional[datetime] = None
+    class Config:
+        from_attributes = True

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Plus, Delete, Save } from '@element-plus/icons-vue'
+import { Plus, Delete, Select } from '@element-plus/icons-vue'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/lib/error'
 import PageHeader from '@/components/PageHeader.vue'
@@ -257,7 +257,7 @@ onMounted(fetchProfile)
           <div class="save-section">
             <el-button
               type="primary"
-              :icon="Save"
+              :icon="Select"
               :loading="savingCategory === 'basic'"
               @click="saveCategory('basic')"
             >
@@ -320,7 +320,7 @@ onMounted(fetchProfile)
           <el-button :icon="Plus" @click="addEducationGroup">添加教育经历</el-button>
           <el-button
             type="primary"
-            :icon="Save"
+            :icon="Select"
             :loading="savingCategory === 'education'"
             @click="saveCategory('education')"
           >
@@ -382,7 +382,7 @@ onMounted(fetchProfile)
           <el-button :icon="Plus" @click="addWorkGroup">添加工作经历</el-button>
           <el-button
             type="primary"
-            :icon="Save"
+            :icon="Select"
             :loading="savingCategory === 'work'"
             @click="saveCategory('work')"
           >

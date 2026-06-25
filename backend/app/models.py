@@ -165,6 +165,19 @@ class CrawlerResult(Base):
     created_at = Column(DateTime, server_default=func.now())
 
 
+class Bookmark(Base):
+    """常用网站书签。"""
+    __tablename__ = "bookmarks"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    title = Column(String(100), nullable=False)
+    url = Column(String(500), nullable=False)
+    category = Column(String(50), default="")
+    icon = Column(String(50), default="")  # emoji 或图标名
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime, server_default=func.now())
+
+
 # === Profile System Models ===
 
 

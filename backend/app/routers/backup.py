@@ -18,6 +18,7 @@ from app.auth import get_current_user
 from app.crypto import decrypt_value
 from app.database import get_db, SessionLocal
 from app.models import (
+    Bookmark,
     CrawlerConfig,
     CrawlerResult,
     Delivery,
@@ -188,6 +189,10 @@ def _gather_backup_data(db: Session, uid: int) -> dict:
     profile_fields = db.query(ProfileField).filter(ProfileField.user_id == uid).all()
     profile_field_list = [_model_to_dict(pf) for pf in profile_fields]
 
+    # Bookmark
+    bookmarks = db.query(Bookmark).filter(Bookmark.user_id == uid).all()
+    bookmark_list = [_model_to_dict(b) for b in bookmarks]
+
     return {
         "version": BACKUP_VERSION,
         "exported_at": datetime.now(timezone.utc).isoformat(),
@@ -200,6 +205,7 @@ def _gather_backup_data(db: Session, uid: int) -> dict:
         "reviews": review_list,
         "notifications": notification_list,
         "profile_fields": profile_field_list,
+        "bookmarks": bookmark_list,
     }
 
 
@@ -218,6 +224,7 @@ def _import_backup_data(db: Session, uid: int, data: dict) -> dict:
     delivery_ids = [row[0] for row in db.query(Delivery.id).filter(Delivery.user_id == uid).all()]
     config_ids = [row[0] for row in db.query(CrawlerConfig.id).filter(CrawlerConfig.user_id == uid).all()]
 
+    db.query(Bookmark).filter(Bookmark.user_id == uid).delete()
     db.query(ProfileField).filter(ProfileField.user_id == uid).delete()
     db.query(Notification).filter(Notification.user_id == uid).delete()
     db.query(Review).filter(Review.user_id == uid).delete()
@@ -335,6 +342,14 @@ def _import_backup_data(db: Session, uid: int, data: dict) -> dict:
         db.add(obj)
     db.flush()
     stats["profile_fields"] = len(data.get("profile_fields", []))
+
+    # ── 10. Bookmark ──
+    for item in data.get("bookmarks", []):
+        prepared = _prepare_item(item, Bookmark)
+        obj = Bookmark(user_id=uid, **prepared)
+        db.add(obj)
+    db.flush()
+    stats["bookmarks"] = len(data.get("bookmarks", []))
 
     db.commit()
     return stats

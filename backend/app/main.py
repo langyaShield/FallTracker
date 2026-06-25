@@ -12,7 +12,7 @@ from starlette.staticfiles import StaticFiles
 from app.config import settings
 from app.database import engine, Base
 from app.ratelimit import limiter
-from app.routers import auth, deliveries, events, resumes, reviews, radar, statistics, settings as settings_router, notifications, backup, admin, profile
+from app.routers import auth, deliveries, events, resumes, reviews, radar, statistics, settings as settings_router, notifications, backup, admin, profile, bookmarks
 
 logger = logging.getLogger("falltracker")
 
@@ -198,6 +198,7 @@ app.include_router(notifications.router, prefix="/api")
 app.include_router(backup.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(profile.router, prefix="/api")
+app.include_router(bookmarks.router, prefix="/api")
 
 @app.get("/health")
 def health():
