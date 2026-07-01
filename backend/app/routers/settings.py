@@ -2,10 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import UserSettings, User
-from app.schemas import UserSettingsUpdate, UserSettingsOut, EmailSettingsUpdate, EmailSettingsOut, CosSettingsUpdate, CosSettingsOut
+from app.schemas import UserSettingsUpdate, UserSettingsOut, EmailSettingsUpdate, EmailSettingsOut, EmailTestResult, CosSettingsUpdate, CosSettingsOut
 from app.auth import get_current_user
 from app.config import settings
 from app.crypto import encrypt_value, decrypt_value
+from email.mime.text import MIMEText
+import smtplib
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -130,6 +132,63 @@ def update_email_settings(
         smtp_password=pwd or "",
         email_from=s.email_from or "",
     )
+
+
+def _send_test_email(server: str, port: int, username: str, password: str, from_addr: str, to_addr: str) -> None:
+    """Send a test email using the provided SMTP config. Raises on failure."""
+    html_body = """<html><body>
+<h2>🔍 爬虫雷达 - 邮箱测试</h2>
+<p>这是一封测试邮件。</p>
+<p>如果你收到这封邮件，说明你的 SMTP 邮箱配置是正确的，监控匹配结果将能正常发送到你的邮箱。</p>
+<hr>
+<p style="color:#999;font-size:12px;">由 FallTracker 爬虫雷达系统自动发送</p>
+</body></html>"""
+    msg = MIMEText(html_body, "html", "utf-8")
+    msg["Subject"] = "[FallTracker] 爬虫雷达邮箱测试"
+    msg["From"] = from_addr
+    msg["To"] = to_addr
+
+    if port == 465:
+        smtp = smtplib.SMTP_SSL(server, port, timeout=30)
+    else:
+        smtp = smtplib.SMTP(server, port, timeout=30)
+        smtp.starttls()
+    try:
+        if username:
+            smtp.login(username, password)
+        smtp.sendmail(from_addr, [to_addr], msg.as_string())
+    finally:
+        smtp.quit()
+
+
+@router.post("/email/test", response_model=EmailTestResult)
+def test_email_settings(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Send a test email using the saved SMTP configuration."""
+    s = get_user_settings(db, current_user.id)
+    server = s.smtp_server
+    port = s.smtp_port or 587
+    username = s.smtp_username or ""
+    password = decrypt_value(s.smtp_password) or ""
+    from_addr = s.email_from or ""
+    to_addr = current_user.username if "@" in current_user.username else from_addr
+
+    if not server or not from_addr:
+        raise HTTPException(status_code=400, detail="邮箱服务器和发件人邮箱未配置，请先保存邮箱配置")
+    if not password:
+        raise HTTPException(status_code=400, detail="邮箱密码/授权码未配置，请先保存邮箱配置")
+
+    try:
+        _send_test_email(server, port, username, password, from_addr, to_addr)
+        return EmailTestResult(success=True, message=f"测试邮件已发送，请检查收件箱（{to_addr}）")
+    except smtplib.SMTPAuthenticationError as e:
+        raise HTTPException(status_code=400, detail=f"邮箱认证失败，请检查账号和授权码/密码：{e}")
+    except smtplib.SMTPConnectError as e:
+        raise HTTPException(status_code=400, detail=f"无法连接到邮箱服务器，请检查服务器地址和端口：{e}")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"发送测试邮件失败：{e}")
 
 
 # === Tencent Cloud COS Configuration ===

@@ -380,6 +380,11 @@ class EmailSettingsOut(BaseModel):
         from_attributes = True
 
 
+class EmailTestResult(BaseModel):
+    success: bool
+    message: str
+
+
 # === COS Settings Schemas ===
 
 

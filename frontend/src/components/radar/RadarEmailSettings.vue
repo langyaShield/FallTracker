@@ -39,6 +39,7 @@ const emailSettings = ref<EmailSettings>({
   email_from: '',
 })
 const emailSaving = ref(false)
+const emailTesting = ref(false)
 const passwordMasked = ref(true)
 const selectedPreset = ref('')
 
@@ -92,6 +93,18 @@ async function saveEmailSettings() {
     ElMessage.error(extractErrorMessage(e, '保存失败'))
   } finally {
     emailSaving.value = false
+  }
+}
+
+async function testEmailSettings() {
+  emailTesting.value = true
+  try {
+    const res = await api.post('/settings/email/test')
+    ElMessage.success(res.data.message || '测试邮件发送成功')
+  } catch (e: any) {
+    ElMessage.error(extractErrorMessage(e, '测试邮件发送失败'))
+  } finally {
+    emailTesting.value = false
   }
 }
 
@@ -149,6 +162,9 @@ defineExpose({ fetchEmailSettings })
       <el-form-item>
         <el-button type="primary" :loading="emailSaving" @click="saveEmailSettings">
           保存配置
+        </el-button>
+        <el-button :loading="emailTesting" @click="testEmailSettings">
+          一键测试
         </el-button>
       </el-form-item>
     </el-form>
