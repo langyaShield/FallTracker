@@ -8,6 +8,7 @@ import PageHeader from '@/components/PageHeader.vue'
 
 const loading = ref(false)
 const saving = ref(false)
+const testingLlm = ref(false)
 
 const llmApiKey = ref('')
 const llmApiBase = ref('https://api.deepseek.com/v1')
@@ -52,6 +53,18 @@ const saveSettings = async () => {
 
 const onKeyInput = () => {
   keyMasked.value = false
+}
+
+const testLLM = async () => {
+  testingLlm.value = true
+  try {
+    const res = await api.post('/settings/llm/test')
+    ElMessage.success(res.data.message || 'LLM 连接测试成功')
+  } catch (e: any) {
+    ElMessage.error(extractErrorMessage(e, 'LLM 连接测试失败'))
+  } finally {
+    testingLlm.value = false
+  }
 }
 
 // ─── 数据备份（本地） ───
@@ -401,6 +414,7 @@ onMounted(() => {
 
         <el-form-item>
           <el-button type="primary" :loading="saving" @click="saveSettings">保存配置</el-button>
+          <el-button :loading="testingLlm" @click="testLLM">测试连接</el-button>
         </el-form-item>
       </el-form>
     </el-card>

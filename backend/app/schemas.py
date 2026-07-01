@@ -385,6 +385,11 @@ class EmailTestResult(BaseModel):
     message: str
 
 
+class LLMTestResult(BaseModel):
+    success: bool
+    message: str
+
+
 # === COS Settings Schemas ===
 
 

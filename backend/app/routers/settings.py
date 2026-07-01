@@ -2,12 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import UserSettings, User
-from app.schemas import UserSettingsUpdate, UserSettingsOut, EmailSettingsUpdate, EmailSettingsOut, EmailTestResult, CosSettingsUpdate, CosSettingsOut
+from app.schemas import UserSettingsUpdate, UserSettingsOut, EmailSettingsUpdate, EmailSettingsOut, EmailTestResult, LLMTestResult, CosSettingsUpdate, CosSettingsOut
 from app.auth import get_current_user
 from app.config import settings
 from app.crypto import encrypt_value, decrypt_value
 from email.mime.text import MIMEText
 import smtplib
+import httpx
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -83,6 +84,69 @@ def update_settings(
         llm_api_base=s.llm_api_base or settings.LLM_API_BASE,
         llm_model=s.llm_model or settings.LLM_MODEL,
     )
+
+
+@router.post("/llm/test", response_model=LLMTestResult)
+def test_llm_settings(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Test the LLM API connection using the saved configuration."""
+    s = get_user_settings(db, current_user.id)
+    api_key = decrypt_value(s.llm_api_key) or settings.LLM_API_KEY
+    api_base = s.llm_api_base or settings.LLM_API_BASE
+    model = s.llm_model or settings.LLM_MODEL
+
+    if not api_key:
+        raise HTTPException(status_code=400, detail="API Key 未配置，请先保存 LLM 配置")
+    if not api_base:
+        raise HTTPException(status_code=400, detail="API Base URL 未配置，请先保存 LLM 配置")
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": model,
+        "messages": [{"role": "user", "content": "Hello, please reply with just 'OK'."}],
+        "max_tokens": 10,
+        "temperature": 0,
+    }
+
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            resp = client.post(
+                f"{api_base.rstrip('/')}/chat/completions",
+                json=payload,
+                headers=headers,
+            )
+            resp.raise_for_status()
+            result = resp.json()
+            reply = result["choices"][0]["message"]["content"].strip()
+            return LLMTestResult(
+                success=True,
+                message=f"LLM 连接测试成功！模型 {model} 返回: {reply}",
+            )
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 401:
+            raise HTTPException(status_code=400, detail="API Key 认证失败，请检查 API Key 是否正确")
+        elif e.response.status_code == 429:
+            raise HTTPException(status_code=400, detail="API 请求频率超限，请稍后再试")
+        elif e.response.status_code == 404:
+            raise HTTPException(status_code=400, detail=f"API 端点不存在，请检查 API Base URL 和模型名称 ({model})")
+        else:
+            detail = f"HTTP {e.response.status_code}"
+            try:
+                detail = e.response.json().get("error", {}).get("message", detail)
+            except Exception:
+                pass
+            raise HTTPException(status_code=400, detail=f"LLM API 请求失败：{detail}")
+    except httpx.ConnectError:
+        raise HTTPException(status_code=400, detail=f"无法连接到 {api_base}，请检查 API Base URL 和网络连接")
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=400, detail="LLM API 请求超时，请检查网络连接或稍后重试")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"LLM 连接测试失败：{e}")
 
 
 # === Email SMTP Configuration ===
