@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '@/lib/api'
@@ -22,6 +22,33 @@ const companyProgress = ref<any[]>([])
 const interviewStats = ref({
   total_interviews: 0, by_type: {} as Record<string, number>,
   by_round: {} as Record<string, number>, upcoming_count: 0,
+})
+
+// ─── 时间范围筛选 (E3) ───
+const timelineRangeOptions = [
+  { label: '1个月', value: 1 },
+  { label: '3个月', value: 3 },
+  { label: '6个月', value: 6 },
+  { label: '1年', value: 12 },
+  { label: '全部', value: 24 },
+]
+const timelineMonths = ref(6)
+const timelineLoading = ref(false)
+
+async function fetchTimeline() {
+  timelineLoading.value = true
+  try {
+    const res = await api.get(`/statistics/timeline?months=${timelineMonths.value}`)
+    timeline.value = res.data
+  } catch (e: any) {
+    ElMessage.error(extractErrorMessage(e, '获取趋势数据失败'))
+  } finally {
+    timelineLoading.value = false
+  }
+}
+
+watch(timelineMonths, () => {
+  fetchTimeline()
 })
 
 // ─── 获取数据 ───
@@ -168,7 +195,49 @@ onMounted(fetchAll)
   <div class="statistics-page">
     <PageHeader title="数据统计" />
 
-    <div v-loading="loading" class="stats-content">
+    <!-- Skeleton loading state -->
+    <div v-if="loading" class="stats-content">
+      <div class="kpi-cards">
+        <el-card v-for="n in 5" :key="n" class="kpi-card">
+          <el-skeleton animated>
+            <template #template>
+              <el-skeleton-item variant="h1" style="width: 50%; margin: 0 auto" />
+              <el-skeleton-item variant="text" style="width: 60%; margin: 8px auto 0" />
+            </template>
+          </el-skeleton>
+        </el-card>
+      </div>
+      <el-card class="weekly-card">
+        <el-skeleton animated :rows="1" />
+      </el-card>
+      <div class="charts-row">
+        <el-card v-for="n in 2" :key="n" class="chart-card">
+          <template #header>
+            <el-skeleton :rows="0" animated>
+              <template #template>
+                <el-skeleton-item variant="text" style="width: 80px" />
+              </template>
+            </el-skeleton>
+          </template>
+          <el-skeleton animated :rows="6" />
+        </el-card>
+      </div>
+      <div class="charts-row">
+        <el-card v-for="n in 2" :key="n" class="chart-card">
+          <template #header>
+            <el-skeleton :rows="0" animated>
+              <template #template>
+                <el-skeleton-item variant="text" style="width: 80px" />
+              </template>
+            </el-skeleton>
+          </template>
+          <el-skeleton animated :rows="8" />
+        </el-card>
+      </div>
+    </div>
+
+    <!-- Actual content -->
+    <div v-else class="stats-content">
       <!-- 核心KPI行 -->
       <div class="kpi-cards">
         <el-card class="kpi-card">
@@ -219,9 +288,20 @@ onMounted(fetchAll)
       <!-- 图表区：趋势 + 漏斗 -->
       <div class="charts-row">
         <el-card class="chart-card">
-          <template #header><span class="card-title">投递趋势</span></template>
-          <EChartsWrap v-if="timeline.months.length" :option="timelineOption" height="300px" />
-          <el-empty v-else description="暂无投递数据" :image-size="60" />
+          <template #header>
+            <div class="card-title-row">
+              <span class="card-title">投递趋势</span>
+              <el-radio-group v-model="timelineMonths" size="small">
+                <el-radio-button v-for="opt in timelineRangeOptions" :key="opt.value" :value="opt.value">
+                  {{ opt.label }}
+                </el-radio-button>
+              </el-radio-group>
+            </div>
+          </template>
+          <div v-loading="timelineLoading">
+            <EChartsWrap v-if="timeline.months.length" :option="timelineOption" height="300px" />
+            <el-empty v-else description="暂无投递数据" :image-size="60" />
+          </div>
         </el-card>
         <el-card class="chart-card">
           <template #header><span class="card-title">转化漏斗</span></template>

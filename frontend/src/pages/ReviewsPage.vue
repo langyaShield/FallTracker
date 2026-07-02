@@ -135,7 +135,9 @@ onMounted(() => {
           <div class="review-content">{{ review.reflection }}</div>
         </div>
       </el-card>
-      <el-empty v-if="reviews.length === 0" description="暂无复盘记录" />
+      <el-empty v-if="reviews.length === 0" description="还没有面试复盘记录">
+        <el-button type="primary" :icon="Plus" @click="openAdd">新建复盘</el-button>
+      </el-empty>
     </div>
 
     <el-dialog v-model="dialogVisible" :title="editing.id ? '编辑复盘' : '新建复盘'" width="600px">

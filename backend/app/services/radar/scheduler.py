@@ -158,8 +158,75 @@ def notify_upcoming_deadlines() -> None:
         db.close()
 
 
+def _send_interview_email(
+    user_id: int,
+    evt: InterviewEvent,
+    delivery: Delivery,
+    when: str,
+) -> None:
+    """N6: 如果用户配置了 SMTP，发送面试提醒邮件。"""
+    import html as html_mod
+    from email.mime.text import MIMEText
+    import smtplib
+    from app.models import UserSettings
+    from app.crypto import decrypt_value
+
+    db2 = SessionLocal()
+    try:
+        s = db2.query(UserSettings).filter(UserSettings.user_id == user_id).first()
+        if not s or not s.smtp_server or not s.email_from:
+            return
+        password = decrypt_value(s.smtp_password) or ""
+        if not password:
+            return
+
+        company = html_mod.escape(delivery.company or "")
+        position = html_mod.escape(delivery.position or "")
+        evt_type = html_mod.escape(evt.event_type or "")
+        scheduled = evt.scheduled_at.strftime("%Y-%m-%d %H:%M") if evt.scheduled_at else ""
+        meeting_link = html_mod.escape(evt.meeting_link or "")
+        link_html = f'<a href="{meeting_link}">加入会议</a>' if meeting_link else "无"
+
+        body_html = f"""<html><body>
+<h2>📅 面试提醒</h2>
+<p><strong>公司:</strong> {company}</p>
+<p><strong>岗位:</strong> {position}</p>
+<p><strong>类型:</strong> {evt_type}</p>
+<p><strong>时间:</strong> {scheduled}（{when}开始）</p>
+<p><strong>会议链接:</strong> {link_html}</p>
+<hr>
+<p style="color:#999;font-size:12px;">由 FallTracker 系统自动发送</p>
+</body></html>"""
+
+        msg = MIMEText(body_html, "html", "utf-8")
+        msg["Subject"] = f"[FallTracker] 面试提醒: {company} - {position}"
+        msg["From"] = s.email_from
+        to_addr = s.smtp_username or s.email_from
+        msg["To"] = to_addr
+
+        port = s.smtp_port or 587
+        if port == 465:
+            smtp = smtplib.SMTP_SSL(s.smtp_server, port, timeout=30)
+        else:
+            smtp = smtplib.SMTP(s.smtp_server, port, timeout=30)
+            smtp.starttls()
+        try:
+            username = s.smtp_username or ""
+            if username:
+                smtp.login(username, password)
+            smtp.sendmail(s.email_from, [to_addr], msg.as_string())
+        finally:
+            smtp.quit()
+        logger.info("Interview email sent to %s for %s - %s", to_addr, company, position)
+    except Exception as e:
+        logger.warning("Failed to send interview email for user %s: %s", user_id, e)
+    finally:
+        db2.close()
+
+
 def notify_upcoming_interviews() -> None:
     """T1-2 面试提醒：为未来 24h 内开始的面试创建站内通知。
+    N6: 如果用户配置了 SMTP，同时发送邮件提醒。
 
     去重策略：title contains "{company} - {position}" 且 created_at 在过去 1h 内 → 跳过。
     """
@@ -213,6 +280,11 @@ def notify_upcoming_interviews() -> None:
                 body=f"将于 {when} 开始",
                 link=f"/calendar?event={evt.id}",
             )
+            # N6: 发送邮件提醒
+            try:
+                _send_interview_email(user_id, evt, delivery, when)
+            except Exception as email_err:
+                logger.warning("Interview email failed for user %s: %s", user_id, email_err)
     except Exception as e:
         logger.exception("notify_upcoming_interviews failed: %s", e)
     finally:

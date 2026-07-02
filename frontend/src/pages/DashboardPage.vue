@@ -2,9 +2,9 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Search, Download, Upload, Delete } from '@element-plus/icons-vue'
+import { Plus, Search, Download, Upload, Delete, Grid, List } from '@element-plus/icons-vue'
 import api from '@/lib/api'
-import { STATUS_COLUMNS } from '@/lib/constants'
+import { STATUS_COLUMNS, STATUS_LABEL_MAP, STATUS_COLOR_MAP } from '@/lib/constants'
 import { formatDateTime } from '@/lib/format'
 import { extractErrorMessage } from '@/lib/error'
 import PageHeader from '@/components/PageHeader.vue'
@@ -122,6 +122,39 @@ const buildQueryParams = () => {
 // Deliveries returned from backend are already filtered/sorted
 const filteredDeliveries = computed(() => deliveries.value)
 
+// --- View mode (kanban / list) ---
+const viewMode = ref<'kanban' | 'list'>(
+  (localStorage.getItem('dashboard_view_mode') as 'kanban' | 'list') || 'kanban'
+)
+
+watch(viewMode, (v) => {
+  localStorage.setItem('dashboard_view_mode', v)
+})
+
+// --- List view sorting ---
+const listSortProp = ref<string>('')
+const listSortOrder = ref<string>('')
+
+const onListSortChange = ({ prop, order }: { prop: string; order: string | null }) => {
+  listSortProp.value = prop || ''
+  listSortOrder.value = order || ''
+}
+
+const sortedListDeliveries = computed(() => {
+  if (!listSortProp.value || !listSortOrder.value) return filteredDeliveries.value
+  const arr = [...filteredDeliveries.value]
+  const prop = listSortProp.value as keyof Delivery
+  const asc = listSortOrder.value === 'ascending' ? 1 : -1
+  arr.sort((a, b) => {
+    const va = a[prop] ?? ''
+    const vb = b[prop] ?? ''
+    if (va < vb) return -1 * asc
+    if (va > vb) return 1 * asc
+    return 0
+  })
+  return arr
+})
+
 // --- Batch operation state ---
 const batchMode = ref(false)
 const selectedIds = ref<Set<number>>(new Set())
@@ -197,10 +230,37 @@ const batchAddTags = async () => {
 
 const batchDelete = async () => {
   if (selectedIds.value.size === 0) return
+  const count = selectedIds.value.size
   try {
-    await ElMessageBox.confirm(`确定删除选中的 ${selectedIds.value.size} 条投递记录吗？`, '批量删除', {
-      type: 'warning',
-    })
+    await ElMessageBox.confirm(
+      `即将永久删除 ${count} 条投递记录及关联数据，此操作不可恢复。确认继续？`,
+      '批量删除确认',
+      {
+        type: 'warning',
+        confirmButtonText: `确认删除 ${count} 条记录`,
+        cancelButtonText: '取消',
+        confirmButtonClass: 'el-button--danger',
+      }
+    )
+  } catch {
+    return
+  }
+  // 二次确认
+  try {
+    await ElMessageBox.confirm(
+      `再次确认：真的要删除这 ${count} 条记录吗？`,
+      '二次确认',
+      {
+        type: 'error',
+        confirmButtonText: `确定删除 ${count} 条`,
+        cancelButtonText: '我再想想',
+        confirmButtonClass: 'el-button--danger',
+      }
+    )
+  } catch {
+    return
+  }
+  try {
     batchLoading.value = true
     await api.delete('/deliveries/batch', {
       data: { ids: Array.from(selectedIds.value) },
@@ -353,8 +413,8 @@ const fetchResumes = async () => {
   }
 }
 
-const openAdd = () => {
-  editing.value = { status: 'pending', tags: [], deadline: null }
+const openAdd = (defaultStatus?: string) => {
+  editing.value = { status: defaultStatus || 'pending', tags: [], deadline: null }
   dialogVisible.value = true
 }
 
@@ -451,6 +511,10 @@ onMounted(() => {
         </el-select>
         <el-button v-if="hasActiveFilters" size="small" @click="clearFilters">清除筛选</el-button>
         <span class="filter-count">匹配 {{ filteredDeliveries.length }} 条</span>
+        <el-button-group class="view-toggle">
+          <el-button :type="viewMode === 'kanban' ? 'primary' : 'default'" :icon="Grid" size="small" @click="viewMode = 'kanban'" />
+          <el-button :type="viewMode === 'list' ? 'primary' : 'default'" :icon="List" size="small" @click="viewMode = 'list'" />
+        </el-button-group>
         <el-button
           :type="batchMode ? 'warning' : 'default'"
           size="small"
@@ -461,90 +525,174 @@ onMounted(() => {
       </div>
     </div>
 
-    <div v-loading="loading" class="kanban-board" :class="{ 'batch-mode': batchMode }">
-      <template v-if="!loading && deliveries.length === 0">
-        <div class="empty-board">
-          <div class="empty-icon">📋</div>
-          <h3>还没有投递记录</h3>
-          <p>点击右上角「新增投递」开始记录你的求职进展</p>
-          <el-button type="primary" :icon="Plus" @click="openAdd">新增第一条投递</el-button>
+    <!-- Empty state -->
+    <div v-if="!loading && deliveries.length === 0" class="empty-board">
+      <el-empty :description="hasActiveFilters ? '没有匹配的投递记录，试试调整筛选条件' : '还没有投递记录'">
+        <template v-if="!hasActiveFilters" #default>
+          <p class="empty-board-hint">点击右上角「新增投递」开始记录你的求职进展</p>
+          <div class="empty-board-actions">
+            <el-button type="primary" :icon="Plus" @click="openAdd">新增第一条投递</el-button>
+            <el-button :icon="Upload" @click="importDialogVisible = true">批量导入</el-button>
+          </div>
+        </template>
+        <template v-else #default>
+          <div class="empty-board-actions">
+            <el-button @click="clearFilters">清除筛选条件</el-button>
+          </div>
+        </template>
+      </el-empty>
+    </div>
+
+    <!-- Kanban view -->
+    <template v-else-if="viewMode === 'kanban'">
+      <!-- Skeleton loading state -->
+      <div v-if="loading" class="kanban-board" :class="{ 'batch-mode': batchMode }">
+        <div v-for="col in STATUS_COLUMNS" :key="col.key" class="kanban-column skeleton-column">
+          <div class="column-header" :style="{ borderColor: col.color }">
+            <el-skeleton :rows="0" animated>
+              <template #template>
+                <el-skeleton-item variant="text" style="width: 60px" />
+              </template>
+            </el-skeleton>
+            <el-skeleton :rows="0" animated>
+              <template #template>
+                <el-skeleton-item variant="button" style="width: 32px; height: 20px" />
+              </template>
+            </el-skeleton>
+          </div>
+          <div class="column-body">
+            <div v-for="n in 3" :key="n" class="skeleton-card">
+              <el-skeleton animated>
+                <template #template>
+                  <el-skeleton-item variant="h3" style="width: 60%" />
+                  <el-skeleton-item variant="text" style="width: 80%; margin-top: 8px" />
+                  <el-skeleton-item variant="text" style="width: 40%; margin-top: 8px" />
+                </template>
+              </el-skeleton>
+            </div>
+          </div>
         </div>
-      </template>
-      <template v-else>
+      </div>
+
+      <div v-else class="kanban-board" :class="{ 'batch-mode': batchMode }">
         <div
           v-for="col in STATUS_COLUMNS"
           :key="col.key"
           class="kanban-column"
           :class="{ 'drag-over': dragOverColumn === col.key }"
         >
-          <div class="column-header" :style="{ borderColor: col.color }">
-            <span class="column-title">{{ col.label }}</span>
+        <div class="column-header" :style="{ borderColor: col.color }">
+          <span class="column-title">{{ col.label }}</span>
+          <div class="column-header-right">
             <el-tag size="small" :style="{ backgroundColor: col.color + '20', color: col.color, borderColor: col.color }">
               {{ groupedDeliveries[col.key]?.length || 0 }}
             </el-tag>
+            <button class="column-add-btn" :title="`添加${col.label}投递`" @click="openAdd(col.key)">+</button>
           </div>
+        </div>
+        <div
+          class="column-body"
+          @dragover="onDragOver($event, col.key)"
+          @dragleave="onDragLeave($event, col.key)"
+          @drop="onDrop($event, col.key)"
+        >
           <div
-            class="column-body"
-            @dragover="onDragOver($event, col.key)"
-            @dragleave="onDragLeave($event, col.key)"
-            @drop="onDrop($event, col.key)"
+            v-for="item in groupedDeliveries[col.key]"
+            :key="item.id"
+            class="kanban-card"
+            :class="{
+              'card-urgent': getDeadlineUrgency(item.deadline) === 'urgent',
+              'card-warning': getDeadlineUrgency(item.deadline) === 'warning',
+              'card-expired': getDeadlineUrgency(item.deadline) === 'expired',
+              'card-selected': selectedIds.has(item.id),
+              'card-highlighted': highlightedId === item.id,
+            }"
+            :style="{ borderLeftColor: urgencyBorderColor(getDeadlineUrgency(item.deadline)) }"
+            draggable="true"
+            @click.stop="onCardClick(item)"
+            @dragstart="onDragStart($event, item)"
+            @dragend="onDragEnd"
           >
-            <div
-              v-for="item in groupedDeliveries[col.key]"
-              :key="item.id"
-              class="kanban-card"
-              :class="{
-                'card-urgent': getDeadlineUrgency(item.deadline) === 'urgent',
-                'card-warning': getDeadlineUrgency(item.deadline) === 'warning',
-                'card-expired': getDeadlineUrgency(item.deadline) === 'expired',
-                'card-selected': selectedIds.has(item.id),
-                'card-highlighted': highlightedId === item.id,
-              }"
-              :style="{ borderLeftColor: urgencyBorderColor(getDeadlineUrgency(item.deadline)) }"
-              draggable="true"
-              @click.stop="onCardClick(item)"
-              @dragstart="onDragStart($event, item)"
-              @dragend="onDragEnd"
-            >
-              <div class="card-top-row">
-                <el-checkbox
-                  v-if="batchMode"
-                  :model-value="selectedIds.has(item.id)"
-                  @click.stop
-                  @change="toggleSelect(item.id)"
-                  class="batch-checkbox"
-                />
-                <div class="card-header">
-                  <span class="company">{{ item.company }}</span>
-                  <el-button
-                    v-if="!batchMode"
-                    text
-                    size="small"
-                    type="danger"
-                    @click.stop="deleteDelivery(item.id)"
-                    class="delete-btn"
-                  >
-                    删除
-                  </el-button>
-                </div>
+            <div class="card-top-row">
+              <el-checkbox
+                v-if="batchMode"
+                :model-value="selectedIds.has(item.id)"
+                @click.stop
+                @change="toggleSelect(item.id)"
+                class="batch-checkbox"
+              />
+              <div class="card-header">
+                <span class="company">{{ item.company }}</span>
+                <el-button
+                  v-if="!batchMode"
+                  text
+                  size="small"
+                  type="danger"
+                  @click.stop="deleteDelivery(item.id)"
+                  class="delete-btn"
+                >
+                  删除
+                </el-button>
               </div>
-              <div class="position">{{ item.position }}</div>
-              <div class="card-time">{{ formatDateTime(item.created_at) }}</div>
-              <div v-if="item.deadline" class="card-deadline" :class="{
-                'deadline-urgent': getDeadlineUrgency(item.deadline) === 'urgent',
-                'deadline-warning': getDeadlineUrgency(item.deadline) === 'warning',
-                'deadline-expired': getDeadlineUrgency(item.deadline) === 'expired',
-              }">
-                <span class="deadline-label">Deadline:</span> {{ formatDateTime(item.deadline) }}
-                <el-tag v-if="getDeadlineUrgency(item.deadline) === 'expired'" size="small" type="danger" class="expired-tag">已过期</el-tag>
-              </div>
-              <div class="card-tags">
-                <el-tag v-for="tag in item.tags" :key="tag" size="small" class="tag">{{ tag }}</el-tag>
-              </div>
+            </div>
+            <div class="position">{{ item.position }}</div>
+            <div class="card-time">{{ formatDateTime(item.created_at) }}</div>
+            <div v-if="item.deadline" class="card-deadline" :class="{
+              'deadline-urgent': getDeadlineUrgency(item.deadline) === 'urgent',
+              'deadline-warning': getDeadlineUrgency(item.deadline) === 'warning',
+              'deadline-expired': getDeadlineUrgency(item.deadline) === 'expired',
+            }">
+              <span class="deadline-label">Deadline:</span> {{ formatDateTime(item.deadline) }}
+              <el-tag v-if="getDeadlineUrgency(item.deadline) === 'expired'" size="small" type="danger" class="expired-tag">已过期</el-tag>
+            </div>
+            <div class="card-tags">
+              <el-tag v-for="tag in item.tags" :key="tag" size="small" class="tag">{{ tag }}</el-tag>
             </div>
           </div>
         </div>
-      </template>
+      </div>
+    </div>
+    </template>
+
+    <!-- List view -->
+    <div v-else v-loading="loading" class="list-view" :class="{ 'batch-mode': batchMode }">
+      <el-table
+        :data="sortedListDeliveries"
+        style="width: 100%"
+        highlight-current-row
+        @row-click="(row: Delivery) => router.push(`/delivery/${row.id}`)"
+        @sort-change="onListSortChange"
+        row-class-name="list-row"
+      >
+        <el-table-column prop="company" label="公司" min-width="120" sortable="custom" />
+        <el-table-column prop="position" label="岗位" min-width="140" sortable="custom" show-overflow-tooltip />
+        <el-table-column prop="status" label="状态" width="100" sortable="custom">
+          <template #default="{ row }">
+            <el-tag
+              size="small"
+              :style="{ backgroundColor: (STATUS_COLOR_MAP[row.status] || '#94a3b8') + '20', color: STATUS_COLOR_MAP[row.status] || '#94a3b8', borderColor: STATUS_COLOR_MAP[row.status] || '#94a3b8' }"
+            >
+              {{ STATUS_LABEL_MAP[row.status] || row.status }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="tags" label="标签" min-width="160">
+          <template #default="{ row }">
+            <el-tag v-for="tag in row.tags" :key="tag" size="small" class="tag">{{ tag }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="deadline" label="截止日期" width="160" sortable="custom">
+          <template #default="{ row }">
+            <span v-if="row.deadline">{{ formatDateTime(row.deadline) }}</span>
+            <span v-else class="text-muted">-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="created_at" label="创建时间" width="160" sortable="custom">
+          <template #default="{ row }">
+            {{ formatDateTime(row.created_at) }}
+          </template>
+        </el-table-column>
+      </el-table>
     </div>
 
     <!-- Batch action bar -->
@@ -743,6 +891,15 @@ onMounted(() => {
   flex: 1;
   padding: 12px;
   overflow-y: auto;
+}
+
+/* --- Skeleton Loading --- */
+.skeleton-card {
+  padding: 14px;
+  margin-bottom: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
 }
 
 /* --- Kanban Card --- */
@@ -945,6 +1102,64 @@ onMounted(() => {
   width: 120px;
 }
 
+/* --- Column header add button (E2) --- */
+.column-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.column-add-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid #cbd5e1;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: all 0.2s;
+  padding: 0;
+}
+
+.column-header:hover .column-add-btn {
+  opacity: 1;
+}
+
+.column-add-btn:hover {
+  border-color: #3b82f6;
+  color: #3b82f6;
+  background: #eff6ff;
+}
+
+/* --- View toggle (X2) --- */
+.view-toggle {
+  flex-shrink: 0;
+}
+
+/* --- List view (X2) --- */
+.list-view {
+  height: calc(100vh - 210px);
+  overflow-y: auto;
+}
+
+.list-view.batch-mode {
+  height: calc(100vh - 270px);
+}
+
+.list-row {
+  cursor: pointer;
+}
+
+.text-muted {
+  color: #c0c4cc;
+}
+
 /* Empty board guide */
 .empty-board {
   width: 100%;
@@ -956,21 +1171,17 @@ onMounted(() => {
   text-align: center;
 }
 
-.empty-board .empty-icon {
-  font-size: 48px;
-  margin-bottom: 16px;
-}
-
-.empty-board h3 {
-  font-size: 18px;
-  color: #334155;
+.empty-board-hint {
+  font-size: 14px;
+  color: #94a3b8;
   margin: 0 0 8px 0;
 }
 
-.empty-board p {
-  font-size: 14px;
-  color: #94a3b8;
-  margin: 0 0 24px 0;
+.empty-board-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 16px;
 }
 
 /* 移动端适配 */
@@ -998,6 +1209,14 @@ onMounted(() => {
 
   .kanban-card {
     padding: 10px;
+  }
+
+  .list-view {
+    height: calc(100dvh - 220px);
+  }
+
+  .list-view.batch-mode {
+    height: calc(100dvh - 340px);
   }
 
   .batch-bar {

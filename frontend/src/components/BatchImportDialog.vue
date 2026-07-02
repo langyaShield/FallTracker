@@ -19,6 +19,7 @@ const visible = computed({
 const step = ref<'upload' | 'preview' | 'result'>('upload')
 const file = ref<File | null>(null)
 const headers = ref<string[]>([])
+const rawHeaders = ref<string[]>([])
 const rows = ref<Record<string, string>[]>([])
 const totalRows = ref(0)
 const loading = ref(false)
@@ -27,6 +28,20 @@ const result = ref<{ created: number; skipped: number; errors: string[] }>({
   skipped: 0,
   errors: [],
 })
+
+// 列映射
+const FIELD_OPTIONS = [
+  { label: '公司', value: 'company' },
+  { label: '岗位', value: 'position' },
+  { label: '状态', value: 'status' },
+  { label: '链接', value: 'link' },
+  { label: '标签', value: 'tags' },
+  { label: '截止日期', value: 'deadline' },
+  { label: 'JD描述', value: 'jd_text' },
+  { label: '(忽略此列)', value: '__ignore__' },
+] as const
+
+const columnMapping = ref<Record<string, string>>({})
 
 const handleFileChange = (uploadFile: { file: File }) => {
   file.value = uploadFile.file
@@ -43,8 +58,15 @@ const previewCSV = async () => {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
     headers.value = res.data.headers
+    rawHeaders.value = res.data.raw_headers || res.data.headers
     rows.value = res.data.rows
     totalRows.value = res.data.total
+    // Initialize mapping from auto-detected headers
+    const map: Record<string, string> = {}
+    rawHeaders.value.forEach((raw, i) => {
+      map[raw] = headers.value[i] || raw
+    })
+    columnMapping.value = map
     step.value = 'preview'
   } catch (e: unknown) {
     ElMessage.error(extractErrorMessage(e, '预览失败'))
@@ -59,6 +81,14 @@ const confirmImport = async () => {
   try {
     const formData = new FormData()
     formData.append('file', file.value)
+    // Build custom mapping JSON (rawHeader -> deliveryField)
+    const mappingJson: Record<string, string> = {}
+    for (const [raw, field] of Object.entries(columnMapping.value)) {
+      if (field !== '__ignore__') {
+        mappingJson[raw] = field
+      }
+    }
+    formData.append('mapping', JSON.stringify(mappingJson))
     const res = await api.post('/deliveries/import', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
@@ -78,8 +108,10 @@ const reset = () => {
   step.value = 'upload'
   file.value = null
   headers.value = []
+  rawHeaders.value = []
   rows.value = []
   totalRows.value = 0
+  columnMapping.value = {}
   result.value = { created: 0, skipped: 0, errors: [] }
 }
 
@@ -121,7 +153,31 @@ const close = () => {
       <p class="preview-info">
         共 <strong>{{ totalRows }}</strong> 条数据，预览前 {{ rows.length }} 条：
       </p>
-      <el-table :data="rows" max-height="300" border size="small" stripe>
+
+      <!-- 列映射配置 -->
+      <div class="mapping-section">
+        <div class="mapping-title">列映射配置</div>
+        <div class="mapping-table">
+          <div v-for="raw in rawHeaders" :key="raw" class="mapping-row">
+            <span class="mapping-raw-header">{{ raw }}</span>
+            <span class="mapping-arrow">→</span>
+            <el-select
+              v-model="columnMapping[raw]"
+              size="small"
+              class="mapping-select"
+            >
+              <el-option
+                v-for="opt in FIELD_OPTIONS"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              />
+            </el-select>
+          </div>
+        </div>
+      </div>
+
+      <el-table :data="rows" max-height="240" border size="small" stripe style="margin-top: 12px">
         <el-table-column
           v-for="h in headers"
           :key="h"
@@ -183,6 +239,46 @@ const close = () => {
 .preview-info {
   margin-bottom: 12px;
   font-size: 14px;
+}
+.mapping-section {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+}
+.mapping-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e3a5f;
+  margin-bottom: 10px;
+}
+.mapping-table {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.mapping-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+.mapping-raw-header {
+  font-size: 13px;
+  color: #475569;
+  font-weight: 500;
+  min-width: 50px;
+}
+.mapping-arrow {
+  color: #94a3b8;
+  font-size: 14px;
+}
+.mapping-select {
+  width: 120px;
 }
 .preview-actions {
   margin-top: 16px;

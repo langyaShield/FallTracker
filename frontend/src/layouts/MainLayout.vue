@@ -20,6 +20,7 @@ import {
 } from '@element-plus/icons-vue'
 import NotificationCenter from '@/components/NotificationCenter.vue'
 import QuickCopyDrawer from '@/components/QuickCopyDrawer.vue'
+import { useKeyboardShortcuts } from '@/composables/useKeyboardShortcuts'
 
 const route = useRoute()
 const router = useRouter()
@@ -86,6 +87,9 @@ const handleMenuSelect = () => {
 const openDrawer = () => {
   drawerVisible.value = true
 }
+
+// 键盘快捷键
+const { shortcuts, showHints } = useKeyboardShortcuts()
 </script>
 
 <template>
@@ -203,6 +207,22 @@ const openDrawer = () => {
 
   <!-- 快捷复制抽屉（全局可用） -->
   <QuickCopyDrawer v-model="quickCopyVisible" />
+
+  <!-- 键盘快捷键提示按钮 -->
+  <div
+    class="shortcut-hint-btn"
+    @mouseenter="showHints = true"
+    @mouseleave="showHints = false"
+  >
+    <span class="hint-icon">?</span>
+    <div v-show="showHints" class="shortcut-hint-popup">
+      <div class="hint-title">键盘快捷键</div>
+      <div v-for="s in shortcuts" :key="s.key" class="hint-item">
+        <kbd>{{ s.key }}</kbd>
+        <span>{{ s.label }}</span>
+      </div>
+    </div>
+  </div>
 </template>
 
 <style scoped>
@@ -506,6 +526,76 @@ const openDrawer = () => {
 
 .drawer-logout:active {
   background: #fee2e2 !important;
+}
+
+/* 键盘快捷键提示 */
+.shortcut-hint-btn {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  z-index: 2000;
+  cursor: default;
+}
+
+.hint-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #e2e8f0;
+  color: #64748b;
+  font-size: 14px;
+  font-weight: 700;
+  transition: background 0.2s, color 0.2s;
+}
+
+.shortcut-hint-btn:hover .hint-icon {
+  background: #1e3a5f;
+  color: #f59e0b;
+}
+
+.shortcut-hint-popup {
+  position: absolute;
+  bottom: 36px;
+  right: 0;
+  background: #1e293b;
+  color: #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 16px;
+  min-width: 200px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+.hint-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #94a3b8;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.hint-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+.hint-item kbd {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-family: monospace;
+  font-size: 11px;
+  color: #f59e0b;
+  min-width: 40px;
+  text-align: center;
 }
 
 /* dvh 支持时修复高度 */

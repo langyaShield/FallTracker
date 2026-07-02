@@ -35,6 +35,22 @@ const loading = ref(false)
 const panelOpen = ref(false)
 const total = ref(0)
 
+// 通知类型筛选
+const typeFilter = ref<string>('all')
+const typeFilterOptions = [
+  { label: '全部', value: 'all', types: [] as string[] },
+  { label: '爬虫', value: 'crawler', types: ['radar_hit', 'crawler_failure'] },
+  { label: '提醒', value: 'reminder', types: ['interview_reminder'] },
+  { label: '预警', value: 'deadline', types: ['deadline_warning'] },
+] as const
+
+const filteredItems = computed(() => {
+  if (typeFilter.value === 'all') return items.value
+  const opt = typeFilterOptions.find(o => o.value === typeFilter.value)
+  if (!opt || opt.types.length === 0) return items.value
+  return items.value.filter(n => opt.types.includes(n.type))
+})
+
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
 const badgeValue = computed(() => (unreadCount.value > 99 ? '99+' : String(unreadCount.value)))
@@ -167,10 +183,20 @@ onUnmounted(() => {
         </div>
       </div>
 
+      <div class="notif-filter-bar">
+        <button
+          v-for="opt in typeFilterOptions"
+          :key="opt.value"
+          class="notif-filter-chip"
+          :class="{ active: typeFilter === opt.value }"
+          @click="typeFilter = opt.value"
+        >{{ opt.label }}</button>
+      </div>
+
       <div v-loading="loading" class="notif-list">
-        <el-empty v-if="!loading && items.length === 0" description="暂无通知" :image-size="80" />
+        <el-empty v-if="!loading && filteredItems.length === 0" :description="items.length === 0 ? '暂无通知' : '该类型暂无通知'" :image-size="80" />
         <div
-          v-for="n in items"
+          v-for="n in filteredItems"
           :key="n.id"
           class="notif-item"
           :class="{ unread: !n.is_read }"
@@ -230,6 +256,35 @@ onUnmounted(() => {
 .notif-actions {
   display: flex;
   gap: 4px;
+}
+
+.notif-filter-bar {
+  display: flex;
+  gap: 6px;
+  padding: 10px 0 4px;
+}
+
+.notif-filter-chip {
+  padding: 3px 10px;
+  font-size: 12px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.15s;
+  line-height: 1.5;
+}
+
+.notif-filter-chip:hover {
+  border-color: #f59e0b;
+  color: #f59e0b;
+}
+
+.notif-filter-chip.active {
+  background: #f59e0b;
+  border-color: #f59e0b;
+  color: #fff;
 }
 
 .notif-list {

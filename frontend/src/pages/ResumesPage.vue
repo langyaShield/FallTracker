@@ -47,10 +47,13 @@ const editFileList = ref<any[]>([])
 const previewUrl = ref('')
 const previewDialog = ref(false)
 
-// OCR 文本查看
+// OCR 文本查看与编辑
 const ocrDialog = ref(false)
 const ocrText = ref('')
 const ocrLoading = ref(false)
+const ocrEditMode = ref(false)
+const ocrResumeId = ref<number | null>(null)
+const ocrSaving = ref(false)
 
 // 批量选择
 const selectedIds = ref<number[]>([])
@@ -297,21 +300,44 @@ const batchDelete = async () => {
     ElMessage.warning('请先选择要删除的简历')
     return
   }
+  const count = selectedIds.value.length
   try {
     await ElMessageBox.confirm(
-      `确定要删除选中的 ${selectedIds.value.length} 份简历吗？此操作不可恢复。`,
+      `即将永久删除 ${count} 份简历及其OCR数据，此操作不可恢复。确认继续？`,
       '批量删除确认',
-      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
+      {
+        confirmButtonText: `确认删除 ${count} 份简历`,
+        cancelButtonText: '取消',
+        type: 'warning',
+        confirmButtonClass: 'el-button--danger',
+      }
     )
+  } catch {
+    return
+  }
+  // 二次确认
+  try {
+    await ElMessageBox.confirm(
+      `再次确认：真的要删除这 ${count} 份简历吗？`,
+      '二次确认',
+      {
+        confirmButtonText: `确定删除 ${count} 份`,
+        cancelButtonText: '我再想想',
+        type: 'error',
+        confirmButtonClass: 'el-button--danger',
+      }
+    )
+  } catch {
+    return
+  }
+  try {
     await api.post('/resumes/batch-delete', { ids: selectedIds.value })
-    ElMessage.success(`成功删除 ${selectedIds.value.length} 份简历`)
+    ElMessage.success(`成功删除 ${count} 份简历`)
     selectedIds.value = []
     selectMode.value = false
     fetchResumes()
   } catch (e: any) {
-    if (e !== 'cancel') {
-      ElMessage.error(extractErrorMessage(e, '批量删除失败'))
-    }
+    ElMessage.error(extractErrorMessage(e, '批量删除失败'))
   }
 }
 
@@ -343,6 +369,8 @@ const viewOcrText = async (resume: Resume) => {
   }
   ocrLoading.value = true
   ocrDialog.value = true
+  ocrEditMode.value = false
+  ocrResumeId.value = resume.id
   try {
     const res = await api.get(`/resumes/${resume.id}`)
     ocrText.value = res.data.ocr_text || '暂无OCR文本'
@@ -350,6 +378,27 @@ const viewOcrText = async (resume: Resume) => {
     ocrText.value = '获取OCR文本失败'
   } finally {
     ocrLoading.value = false
+  }
+}
+
+const saveOcrText = async () => {
+  if (!ocrResumeId.value) return
+  ocrSaving.value = true
+  try {
+    const form = new FormData()
+    form.append('ocr_text', ocrText.value)
+    await api.put(`/resumes/${ocrResumeId.value}`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    ElMessage.success('OCR文本已保存')
+    ocrEditMode.value = false
+    // Update local data
+    const r = resumes.value.find(r => r.id === ocrResumeId.value)
+    if (r) r.ocr_text = ocrText.value
+  } catch (e: any) {
+    ElMessage.error(extractErrorMessage(e, '保存失败'))
+  } finally {
+    ocrSaving.value = false
   }
 }
 
@@ -521,7 +570,9 @@ onUnmounted(() => {
           <el-button type="danger" text :icon="Delete" @click="deleteResume(resume)">删除</el-button>
         </div>
       </el-card>
-      <el-empty v-if="!loading && resumes.length === 0" description="暂无简历" />
+      <el-empty v-if="!loading && resumes.length === 0" description="还没有上传简历">
+        <el-button type="primary" :icon="Plus" @click="uploadDialog = true">上传简历</el-button>
+      </el-empty>
     </div>
 
     <!-- 上传对话框 -->
@@ -581,10 +632,30 @@ onUnmounted(() => {
       <iframe v-if="previewUrl" :src="previewUrl" class="pdf-preview" />
     </el-dialog>
 
-    <!-- OCR文本查看对话框 -->
+    <!-- OCR文本查看/编辑对话框 -->
     <el-dialog v-model="ocrDialog" title="OCR识别文本" width="700px">
       <div v-loading="ocrLoading" class="ocr-text-content">
-        <pre class="ocr-text">{{ ocrText }}</pre>
+        <div class="ocr-toolbar">
+          <el-button
+            v-if="!ocrEditMode"
+            type="primary"
+            size="small"
+            :icon="Edit"
+            @click="ocrEditMode = true"
+          >编辑</el-button>
+          <template v-else>
+            <el-button size="small" @click="ocrEditMode = false">取消</el-button>
+            <el-button type="primary" size="small" :loading="ocrSaving" @click="saveOcrText">保存</el-button>
+          </template>
+        </div>
+        <el-input
+          v-if="ocrEditMode"
+          v-model="ocrText"
+          type="textarea"
+          :autosize="{ minRows: 10, maxRows: 25 }"
+          class="ocr-edit-textarea"
+        />
+        <pre v-else class="ocr-text">{{ ocrText }}</pre>
       </div>
     </el-dialog>
   </div>
@@ -723,6 +794,19 @@ onUnmounted(() => {
 .ocr-text-content {
   max-height: 60vh;
   overflow-y: auto;
+}
+
+.ocr-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.ocr-edit-textarea :deep(textarea) {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .ocr-text {

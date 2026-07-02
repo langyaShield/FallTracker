@@ -13,3 +13,12 @@ app.use(router)
 app.use(ElementPlus)
 
 app.mount('#app')
+
+// Register service worker for PWA support
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {
+      // Service worker registration failed, app still works normally
+    })
+  })
+}

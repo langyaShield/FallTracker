@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
@@ -76,10 +76,55 @@ const formatCountdown = (deadline: string): string => {
   return `还剩 ${hours}小时`
 }
 
+// --- 下一场面试倒计时 ---
+const nextInterview = ref<any>(null)
+const countdownText = ref('')
+let countdownTimer: ReturnType<typeof setInterval> | null = null
+
+const updateCountdown = () => {
+  if (!nextInterview.value?.scheduled_at) {
+    countdownText.value = ''
+    return
+  }
+  const now = new Date()
+  const target = new Date(nextInterview.value.scheduled_at)
+  const diffMs = target.getTime() - now.getTime()
+  if (diffMs <= 0) {
+    countdownText.value = '已开始'
+    return
+  }
+  const totalMinutes = Math.floor(diffMs / (1000 * 60))
+  const days = Math.floor(totalMinutes / (60 * 24))
+  const hours = Math.floor((totalMinutes % (60 * 24)) / 60)
+  const minutes = totalMinutes % 60
+  const parts: string[] = []
+  if (days > 0) parts.push(`${days}天`)
+  if (hours > 0) parts.push(`${hours}小时`)
+  parts.push(`${minutes}分钟`)
+  countdownText.value = parts.join('') + '后'
+}
+
+const fetchNextInterview = async () => {
+  try {
+    const res = await api.get('/events', { params: { upcoming: true, limit: 1 } })
+    const events = res.data || []
+    nextInterview.value = events.length > 0 ? events[0] : null
+    updateCountdown()
+  } catch {
+    // non-critical
+  }
+}
+
 onMounted(() => {
   fetchStats()
   fetchUpcoming()
   fetchUrgentDeadlines()
+  fetchNextInterview()
+  countdownTimer = setInterval(updateCountdown, 60_000)
+})
+
+onUnmounted(() => {
+  if (countdownTimer) clearInterval(countdownTimer)
 })
 </script>
 
@@ -103,6 +148,30 @@ onMounted(() => {
         <div class="kpi-value" style="color: #10b981">{{ offerCount }}</div>
         <div class="kpi-label">已Offer</div>
       </el-card>
+    </div>
+
+    <!-- 下一场面试倒计时 -->
+    <div v-if="nextInterview" class="countdown-card" @click="router.push('/calendar')">
+      <div class="countdown-left">
+        <div class="countdown-label">下一场面试</div>
+        <div class="countdown-company">
+          {{ nextInterview.company || '未知公司' }}
+          <el-tag
+            size="small"
+            :color="EVENT_TYPE_COLOR_MAP[nextInterview.event_type] || '#94a3b8'"
+            effect="dark"
+            style="border: none; margin-left: 8px"
+          >{{ EVENT_TYPE_LABEL_MAP[nextInterview.event_type] || nextInterview.event_type }}</el-tag>
+        </div>
+        <div class="countdown-time">{{ formatShortDateTime(nextInterview.scheduled_at) }}</div>
+      </div>
+      <div class="countdown-right">
+        <div class="countdown-number">{{ countdownText }}</div>
+      </div>
+    </div>
+    <div v-else class="countdown-card countdown-empty">
+      <span>暂无即将到来的面试</span>
+      <el-button text type="primary" @click="router.push('/calendar')">查看日历</el-button>
     </div>
 
     <!-- 紧急截止日期预警 -->
@@ -231,6 +300,68 @@ onMounted(() => {
   font-size: 14px;
   color: #64748b;
   margin-top: 4px;
+}
+
+.countdown-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  margin-bottom: 24px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #1e3a5f 0%, #3b82f6 100%);
+  color: #fff;
+  cursor: pointer;
+  transition: box-shadow 0.2s;
+}
+
+.countdown-card:hover {
+  box-shadow: 0 6px 20px rgba(59, 130, 246, 0.3);
+}
+
+.countdown-card.countdown-empty {
+  background: linear-gradient(135deg, #64748b 0%, #94a3b8 100%);
+  cursor: default;
+}
+
+.countdown-card.countdown-empty:hover {
+  box-shadow: none;
+}
+
+.countdown-label {
+  font-size: 12px;
+  opacity: 0.8;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.countdown-company {
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+}
+
+.countdown-time {
+  font-size: 13px;
+  opacity: 0.75;
+}
+
+.countdown-right {
+  text-align: right;
+}
+
+.countdown-number {
+  font-size: 22px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.countdown-empty .countdown-number {
+  font-size: 14px;
+  font-weight: 400;
 }
 
 .content-grid {

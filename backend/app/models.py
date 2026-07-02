@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON, Boolean
 from sqlalchemy.sql import func
 from app.database import Base
@@ -102,6 +103,7 @@ class UserSettings(Base):
     cos_region = Column(String(100), nullable=True)
     cos_path = Column(String(500), nullable=True)
     cos_auto_backup_hours = Column(Integer, nullable=True)  # 自动备份间隔（小时），None=关闭
+    email_template = Column(Text, nullable=True)  # 自定义邮件 HTML 模板
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
@@ -198,3 +200,25 @@ class ProfileField(Base):
     sort_order = Column(Integer, default=0)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class DeliveryLog(Base):
+    """N1 - 投递活动日志，记录状态变更、事件添加等操作。"""
+    __tablename__ = "delivery_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    delivery_id = Column(Integer, ForeignKey("deliveries.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    action = Column(String(50), nullable=False)  # 'status_change', 'event_added', 'event_deleted', 'note_added'
+    detail = Column(Text, nullable=True)  # JSON or plain text description
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class DeliveryNote(Base):
+    """N9 - 投递备注/沟通记录。"""
+    __tablename__ = "delivery_notes"
+    id = Column(Integer, primary_key=True, index=True)
+    delivery_id = Column(Integer, ForeignKey("deliveries.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

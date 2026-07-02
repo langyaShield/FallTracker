@@ -31,9 +31,67 @@ def get_email_config(user_id: int) -> Optional[Dict[str, Any]]:
             "username": s.smtp_username or "",
             "password": decrypt_value(s.smtp_password) or "",
             "from_addr": s.email_from,
+            "email_template": s.email_template,
         }
     finally:
         db.close()
+
+
+def _render_custom_template(
+    template: str,
+    config_name: str,
+    config_url: str,
+    analysis: Dict[str, Any],
+) -> str:
+    """使用自定义模板渲染邮件内容，支持变量替换。
+
+    支持的变量：{{matched_count}}, {{items_table}}, {{config_name}}, {{summary}}
+    所有用户/LLM 提供的字符串会经过 HTML 转义。
+    """
+    safe_config_name = html.escape(config_name)
+    safe_config_url = html.escape(config_url)
+    safe_summary = html.escape(analysis.get("summary", ""))
+
+    matched_items = analysis.get("matched_items", [])
+    matched_count = len(matched_items)
+
+    # 构建匹配职位表格 HTML
+    items_table = ""
+    if matched_items:
+        rows = ""
+        for item in matched_items:
+            company = html.escape(item.get("company", ""))
+            position = html.escape(item.get("position", ""))
+            salary = html.escape(item.get("salary", "—"))
+            location = html.escape(item.get("location", "—"))
+            link = item.get("link", "")
+            link_html = f'<a href="{html.escape(link)}">查看</a>' if link else "—"
+            rows += (
+                f"<tr>"
+                f'<td style="padding:8px;border:1px solid #e2e8f0;">{company}</td>'
+                f'<td style="padding:8px;border:1px solid #e2e8f0;">{position}</td>'
+                f'<td style="padding:8px;border:1px solid #e2e8f0;">{salary}</td>'
+                f'<td style="padding:8px;border:1px solid #e2e8f0;">{location}</td>'
+                f'<td style="padding:8px;border:1px solid #e2e8f0;">{link_html}</td>'
+                f"</tr>"
+            )
+        items_table = (
+            '<table style="border-collapse:collapse;width:100%;font-size:14px;">'
+            "<thead><tr>"
+            '<th style="padding:8px;border:1px solid #e2e8f0;text-align:left;">公司</th>'
+            '<th style="padding:8px;border:1px solid #e2e8f0;text-align:left;">岗位</th>'
+            '<th style="padding:8px;border:1px solid #e2e8f0;text-align:left;">薪资</th>'
+            '<th style="padding:8px;border:1px solid #e2e8f0;text-align:left;">地点</th>'
+            '<th style="padding:8px;border:1px solid #e2e8f0;text-align:left;">链接</th>'
+            f"</tr></thead><tbody>{rows}</tbody></table>"
+        )
+
+    result = template
+    result = result.replace("{{matched_count}}", str(matched_count))
+    result = result.replace("{{items_table}}", items_table)
+    result = result.replace("{{config_name}}", safe_config_name)
+    result = result.replace("{{summary}}", safe_summary)
+    return result
 
 
 def _render_html(config_name: str, config_url: str, analysis: Dict[str, Any]) -> str:
@@ -115,7 +173,12 @@ def send_notification_email(
     if not email_cfg:
         return False
 
-    html_body = _render_html(config_name, config_url, analysis)
+    # N4: 使用自定义模板（如有），否则使用默认模板
+    custom_template = email_cfg.get("email_template")
+    if custom_template:
+        html_body = _render_custom_template(custom_template, config_name, config_url, analysis)
+    else:
+        html_body = _render_html(config_name, config_url, analysis)
 
     try:
         msg = MIMEText(html_body, "html", "utf-8")

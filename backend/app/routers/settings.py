@@ -56,6 +56,7 @@ def read_settings(db: Session = Depends(get_db), current_user: User = Depends(ge
         llm_api_key=key,
         llm_api_base=s.llm_api_base or settings.LLM_API_BASE,
         llm_model=s.llm_model or settings.LLM_MODEL,
+        email_template=s.email_template,
     )
 
 
@@ -83,6 +84,7 @@ def update_settings(
         llm_api_key=key,
         llm_api_base=s.llm_api_base or settings.LLM_API_BASE,
         llm_model=s.llm_model or settings.LLM_MODEL,
+        email_template=s.email_template,
     )
 
 

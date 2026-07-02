@@ -255,12 +255,14 @@ class UserSettingsUpdate(BaseModel):
     llm_api_key: Optional[str] = None
     llm_api_base: Optional[str] = None
     llm_model: Optional[str] = None
+    email_template: Optional[str] = None
 
 
 class UserSettingsOut(BaseModel):
     llm_api_key: Optional[str] = None
     llm_api_base: Optional[str] = None
     llm_model: Optional[str] = None
+    email_template: Optional[str] = None
     class Config:
         from_attributes = True
 
@@ -418,6 +420,7 @@ class CosSettingsOut(BaseModel):
 
 class ImportPreviewResponse(BaseModel):
     headers: List[str]
+    raw_headers: List[str] = []
     rows: List[dict]
     total: int
 
@@ -536,3 +539,46 @@ class BookmarkOut(BaseModel):
     created_at: Optional[datetime] = None
     class Config:
         from_attributes = True
+
+
+# === N1: Delivery Activity Log Schemas ===
+
+
+class DeliveryLogOut(BaseModel):
+    id: int
+    delivery_id: int
+    action: str
+    detail: Optional[str] = None
+    created_at: datetime
+    class Config:
+        from_attributes = True
+
+
+# === N9: Delivery Notes Schemas ===
+
+
+class DeliveryNoteCreate(BaseModel):
+    content: str
+
+
+class DeliveryNoteUpdate(BaseModel):
+    content: str
+
+
+class DeliveryNoteOut(BaseModel):
+    id: int
+    delivery_id: int
+    user_id: int
+    content: str
+    created_at: datetime
+    updated_at: datetime
+    class Config:
+        from_attributes = True
+
+
+# === N5: Tag System Schemas ===
+
+
+class TagCountOut(BaseModel):
+    tag: str
+    count: int
