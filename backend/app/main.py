@@ -1,6 +1,6 @@
 import re
 import sqlite3, os, logging
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
@@ -11,7 +11,9 @@ from sqlalchemy.exc import SQLAlchemyError
 from starlette.staticfiles import StaticFiles
 from app.config import settings
 from app.database import engine, Base
+from app.mcp_server import mcp, mcp_lifespan
 from app.ratelimit import limiter
+from app.routers import agent as agent_router
 from app.routers import auth, deliveries, events, resumes, reviews, radar, statistics, settings as settings_router, notifications, backup, admin, profile, bookmarks
 
 logger = logging.getLogger("falltracker")
@@ -115,36 +117,40 @@ if settings.SECRET_KEY in _BLOCKED_SECRETS:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 在测试环境下不启动后台调度器（避免测试 DB 表不存在导致启动失败）
+    # 在测试环境下不启动后台调度器（避免测试 DB 表不存在导致启动失败），但仍启动 MCP lifespan
     if os.environ.get("PYTEST_CURRENT_TEST"):
-        yield
+        async with mcp_lifespan(app):
+            yield
         return
 
-    from apscheduler.schedulers.background import BackgroundScheduler
-    from app.services.radar.scheduler import (
-        check_and_run_due_crawlers,
-        notify_upcoming_interviews,
-        notify_upcoming_deadlines,
-    )
-    from app.routers.backup import auto_backup_all_users
-    from app.routers.admin import cleanup_expired_invite_codes
+    async with AsyncExitStack() as stack:
+        await stack.enter_async_context(mcp_lifespan(app))
 
-    scheduler = BackgroundScheduler(daemon=True)
-    # 爬虫调度：每 60 秒检查一次到期的爬虫配置
-    scheduler.add_job(check_and_run_due_crawlers, "interval", seconds=60, id="crawler_tick")
-    # 面试提醒：每 10 分钟检查一次即将开始的面试
-    scheduler.add_job(notify_upcoming_interviews, "interval", minutes=10, id="interview_reminder")
-    # 截止日期预警：每小时检查一次 48h 内到期的投递
-    scheduler.add_job(notify_upcoming_deadlines, "interval", hours=1, id="deadline_warning")
-    # COS 自动备份：每 30 分钟检查一次是否需要自动备份
-    scheduler.add_job(auto_backup_all_users, "interval", minutes=30, id="auto_backup")
-    # 过期邀请码清理：每小时检查一次并删除过期邀请码
-    scheduler.add_job(cleanup_expired_invite_codes, "interval", hours=1, id="invite_cleanup")
-    scheduler.start()
+        from apscheduler.schedulers.background import BackgroundScheduler
+        from app.services.radar.scheduler import (
+            check_and_run_due_crawlers,
+            notify_upcoming_interviews,
+            notify_upcoming_deadlines,
+        )
+        from app.routers.backup import auto_backup_all_users
+        from app.routers.admin import cleanup_expired_invite_codes
 
-    yield
+        scheduler = BackgroundScheduler(daemon=True)
+        # 爬虫调度：每 60 秒检查一次到期的爬虫配置
+        scheduler.add_job(check_and_run_due_crawlers, "interval", seconds=60, id="crawler_tick")
+        # 面试提醒：每 10 分钟检查一次即将开始的面试
+        scheduler.add_job(notify_upcoming_interviews, "interval", minutes=10, id="interview_reminder")
+        # 截止日期预警：每小时检查一次 48h 内到期的投递
+        scheduler.add_job(notify_upcoming_deadlines, "interval", hours=1, id="deadline_warning")
+        # COS 自动备份：每 30 分钟检查一次是否需要自动备份
+        scheduler.add_job(auto_backup_all_users, "interval", minutes=30, id="auto_backup")
+        # 过期邀请码清理：每小时检查一次并删除过期邀请码
+        scheduler.add_job(cleanup_expired_invite_codes, "interval", hours=1, id="invite_cleanup")
+        scheduler.start()
 
-    scheduler.shutdown(wait=False)
+        yield
+
+        scheduler.shutdown(wait=False)
 
 
 app = FastAPI(title="FallTracker API", version="1.0.0", lifespan=lifespan)
@@ -204,6 +210,7 @@ app.include_router(backup.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(profile.router, prefix="/api")
 app.include_router(bookmarks.router, prefix="/api")
+app.include_router(agent_router.router, prefix="/api")
 
 @app.get("/health")
 def health():
@@ -213,11 +220,18 @@ def health():
 # --- Serve frontend static files ---
 FRONTEND_DIST = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "frontend", "dist")
 
-if os.path.isdir(FRONTEND_DIST):
-    assets_dir = os.path.join(FRONTEND_DIST, "assets")
-    if os.path.isdir(assets_dir):
-        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
+assets_dir = os.path.join(FRONTEND_DIST, "assets")
+if os.path.isdir(assets_dir):
+    app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
+# Mount MCP server for Hermes Agent (stateless HTTP transport).
+# The FastMCP streamable HTTP app exposes its endpoint at path /mcp internally,
+# so we mount at root to make the final URL /mcp. Placed after /assets so
+# static files are served by the main app first; placed before the SPA
+# catch-all so /mcp is handled by the MCP subapp.
+app.mount("/", mcp.streamable_http_app())
+
+if os.path.isdir(FRONTEND_DIST):
     @app.get("/{full_path:path}")
     async def serve_spa(request: Request, full_path: str):
         """Serve the SPA - return index.html for all non-API, non-static routes."""

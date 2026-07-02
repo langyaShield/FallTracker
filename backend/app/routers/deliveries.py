@@ -7,7 +7,7 @@ from typing import Dict, List, Optional
 
 logger = logging.getLogger("falltracker")
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile, File
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -183,6 +183,7 @@ async def import_preview(
 @limiter.limit("5/minute")
 @router.post("/import", response_model=ImportResponse)
 async def import_csv(
+    request: Request,
     file: UploadFile = File(...),
     mapping: Optional[str] = Form(None, description="JSON string: raw_header -> delivery field"),
     db: Session = Depends(get_db),

@@ -1,6 +1,6 @@
 import os
 import uuid
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, UploadFile, File, Form, Query
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, func as sa_func
@@ -171,6 +171,7 @@ def search_resumes(
 @limiter.limit("5/minute")
 @router.post("", response_model=ResumeOut)
 def create_resume(
+    request: Request,
     background_tasks: BackgroundTasks,
     name: str = Form(...),
     file: UploadFile = File(...),

@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
@@ -421,6 +421,7 @@ MAX_IMPORT_SIZE = 50 * 1024 * 1024  # 50MB
 @limiter.limit("3/minute")
 @router.post("/import")
 def import_data(
+    request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -478,6 +479,7 @@ def _get_cos_client(s: UserSettings):
 @limiter.limit("3/minute")
 @router.post("/upload-to-cos")
 def upload_to_cos(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -615,6 +617,7 @@ def rename_cos_backup(
 @limiter.limit("3/minute")
 @router.post("/restore-from-cos")
 def restore_from_cos(
+    request: Request,
     file_key: str = Form(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

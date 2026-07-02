@@ -1,7 +1,7 @@
 import re
 import json
 import logging
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from typing import List
 from app.database import get_db
@@ -57,7 +57,12 @@ def delete_review(review_id: int, db: Session = Depends(get_db), current_user: U
 
 @limiter.limit("3/minute")
 @router.post("/{review_id}/generate")
-async def generate_structured(review_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+async def generate_structured(
+    request: Request,
+    review_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     item = db.query(Review).filter(Review.id == review_id, Review.user_id == current_user.id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Review not found")

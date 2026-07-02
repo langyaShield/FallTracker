@@ -15,7 +15,7 @@ import json
 import os
 from typing import Any, Dict, List
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
@@ -161,6 +161,7 @@ def delete_config(
 @limiter.limit("2/minute")
 @router.post("/configs/{config_id}/run")
 def run_crawler_manual(
+    request: Request,
     config_id: int,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
