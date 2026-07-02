@@ -128,10 +128,11 @@ def export_ics(
             description_parts.append(f"备注: {evt.notes}")
         description = "\n".join(description_parts)
 
-        # End time: 默认 1 小时后；如无 scheduled_at，跳过
+        # End time: 使用实际 duration_minutes，默认 60 分钟；如无 scheduled_at，跳过
         if not evt.scheduled_at:
             continue
-        end_dt = evt.scheduled_at + timedelta(hours=1)
+        duration = evt.duration_minutes or 60
+        end_dt = evt.scheduled_at + timedelta(minutes=duration)
 
         lines.extend([
             "BEGIN:VEVENT",

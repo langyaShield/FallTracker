@@ -129,7 +129,21 @@ const PROFILE_FIELD_LABEL_MAP: Record<string, string> = {
   achievements: '主要成果',
 }
 
-/** 获取字段中文标签，未知字段返回 key 本身 */
+/** 获取字段中文标签（全局，不区分分类），未知字段返回 key 本身 */
 export function getProfileFieldLabel(key: string): string {
+  return PROFILE_FIELD_LABEL_MAP[key] || key
+}
+
+/** 获取字段中文标签（分类感知），优先使用分类预设字段的 label，解决同 key 不同分类标签不同的问题 */
+export function getCategoryFieldLabel(category: string, key: string): string {
+  const presets = category === 'education'
+    ? PROFILE_EDUCATION_FIELDS
+    : category === 'work'
+      ? PROFILE_WORK_FIELDS
+      : null
+  if (presets) {
+    const match = presets.find(f => f.key === key)
+    if (match) return match.label
+  }
   return PROFILE_FIELD_LABEL_MAP[key] || key
 }

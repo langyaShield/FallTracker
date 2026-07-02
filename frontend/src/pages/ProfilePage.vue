@@ -11,6 +11,7 @@ import {
   PROFILE_EDUCATION_FIELDS,
   PROFILE_WORK_FIELDS,
   getProfileFieldLabel,
+  getCategoryFieldLabel,
 } from '@/lib/constants'
 
 // ─── 数据结构 ───
@@ -280,16 +281,16 @@ onMounted(fetchProfile)
 
             <div class="field-grid">
               <div v-for="(field, fi) in group.fields" :key="field.key" class="field-row">
-                <div class="field-label">{{ getFieldLabel(field.key) }}</div>
+                <div class="field-label">{{ getCategoryFieldLabel('education', field.key) }}</div>
                 <div class="field-input">
                   <el-input
                     v-if="field.key === 'courses' || field.key === 'awards'"
                     v-model="field.value"
                     type="textarea"
                     :rows="2"
-                    :placeholder="getFieldLabel(field.key)"
+                    :placeholder="getCategoryFieldLabel('education', field.key)"
                   />
-                  <el-input v-else v-model="field.value" :placeholder="getFieldLabel(field.key)" clearable />
+                  <el-input v-else v-model="field.value" :placeholder="getCategoryFieldLabel('education', field.key)" clearable />
                 </div>
                 <el-button link type="danger" :icon="Delete" @click="removeFieldFromGroup(group, fi)" />
               </div>
@@ -342,16 +343,16 @@ onMounted(fetchProfile)
 
             <div class="field-grid">
               <div v-for="(field, fi) in group.fields" :key="field.key" class="field-row">
-                <div class="field-label">{{ getFieldLabel(field.key) }}</div>
+                <div class="field-label">{{ getCategoryFieldLabel('work', field.key) }}</div>
                 <div class="field-input">
                   <el-input
                     v-if="field.key === 'description' || field.key === 'achievements'"
                     v-model="field.value"
                     type="textarea"
                     :rows="3"
-                    :placeholder="getFieldLabel(field.key)"
+                    :placeholder="getCategoryFieldLabel('work', field.key)"
                   />
-                  <el-input v-else v-model="field.value" :placeholder="getFieldLabel(field.key)" clearable />
+                  <el-input v-else v-model="field.value" :placeholder="getCategoryFieldLabel('work', field.key)" clearable />
                 </div>
                 <el-button link type="danger" :icon="Delete" @click="removeFieldFromGroup(group, fi)" />
               </div>

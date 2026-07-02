@@ -4,7 +4,7 @@ import { ElMessage } from 'element-plus'
 import { CopyDocument, DocumentCopy } from '@element-plus/icons-vue'
 import api from '@/lib/api'
 import { extractErrorMessage } from '@/lib/error'
-import { PROFILE_CATEGORY_LABELS, getProfileFieldLabel } from '@/lib/constants'
+import { PROFILE_CATEGORY_LABELS, getProfileFieldLabel, getCategoryFieldLabel } from '@/lib/constants'
 
 const props = defineProps<{
   modelValue: boolean
@@ -81,9 +81,9 @@ const copyField = (field: FieldItem) => {
 }
 
 // 复制整个分组
-const copyGroup = (group: GroupItem) => {
+const copyGroup = (group: GroupItem, category: string) => {
   const text = group.fields
-    .map(f => `${getProfileFieldLabel(f.field_key)}：${f.field_value}`)
+    .map(f => `${getCategoryFieldLabel(category, f.field_key)}：${f.field_value}`)
     .join('\n')
   copyToClipboard(text, '整条信息')
 }
@@ -165,7 +165,7 @@ const activeWorkGroup = ref(0)
             link
             type="primary"
             :icon="DocumentCopy"
-            @click="copyGroup(getCategory('education')!.groups[activeEduGroup] || getCategory('education')!.groups[0])"
+            @click="copyGroup(getCategory('education')!.groups[activeEduGroup] || getCategory('education')!.groups[0], 'education')"
           >
             复制本条
           </el-button>
@@ -193,7 +193,7 @@ const activeWorkGroup = ref(0)
               class="field-item"
             >
               <div class="field-info">
-                <span class="field-label">{{ getProfileFieldLabel(field.field_key) }}</span>
+                <span class="field-label">{{ getCategoryFieldLabel('education', field.field_key) }}</span>
                 <span class="field-value">{{ field.field_value }}</span>
               </div>
               <el-button
@@ -218,7 +218,7 @@ const activeWorkGroup = ref(0)
             link
             type="primary"
             :icon="DocumentCopy"
-            @click="copyGroup(getCategory('work')!.groups[activeWorkGroup] || getCategory('work')!.groups[0])"
+            @click="copyGroup(getCategory('work')!.groups[activeWorkGroup] || getCategory('work')!.groups[0], 'work')"
           >
             复制本条
           </el-button>
@@ -246,7 +246,7 @@ const activeWorkGroup = ref(0)
               class="field-item"
             >
               <div class="field-info">
-                <span class="field-label">{{ getProfileFieldLabel(field.field_key) }}</span>
+                <span class="field-label">{{ getCategoryFieldLabel('work', field.field_key) }}</span>
                 <span class="field-value">{{ field.field_value }}</span>
               </div>
               <el-button

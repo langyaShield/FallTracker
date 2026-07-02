@@ -77,14 +77,18 @@ def batch_save_category(
         ProfileField.category == category,
     ).delete(synchronize_session=False)
 
-    # 计算新的 group_index：从已有数据的最大值+1 开始，或使用请求中指定的
+    # 计算新的 group_index：取 DB 中剩余数据和请求中保留的 gi 的最大值 +1
     existing_max = (
         db.query(ProfileField.group_index)
-        .filter(ProfileField.user_id == uid)
+        .filter(ProfileField.user_id == uid, ProfileField.category == category)
         .order_by(ProfileField.group_index.desc())
         .first()
     )
-    next_gi = (existing_max[0] + 1) if existing_max else 1
+    max_gi = existing_max[0] if existing_max else 0
+    for group in data.groups:
+        if group.group_index is not None and group.group_index > max_gi:
+            max_gi = group.group_index
+    next_gi = max_gi + 1
 
     for group in data.groups:
         if category == "basic":
