@@ -1,5 +1,6 @@
 import re
 import json
+import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
@@ -8,8 +9,10 @@ from app.models import Review, Delivery, User
 from app.schemas import ReviewCreate, ReviewUpdate, ReviewOut
 from app.auth import get_current_user
 from app.routers.settings import get_llm_config
+from app.ratelimit import limiter
 import httpx
 
+logger = logging.getLogger("falltracker")
 router = APIRouter(prefix="/reviews", tags=["reviews"])
 
 
@@ -52,6 +55,7 @@ def delete_review(review_id: int, db: Session = Depends(get_db), current_user: U
     return {"ok": True}
 
 
+@limiter.limit("3/minute")
 @router.post("/{review_id}/generate")
 async def generate_structured(review_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     item = db.query(Review).filter(Review.id == review_id, Review.user_id == current_user.id).first()
@@ -105,7 +109,8 @@ async def generate_structured(review_id: int, db: Session = Depends(get_db), cur
         else:
             raise HTTPException(status_code=502, detail=f"LLM API 返回错误 (HTTP {status_code})")
     except httpx.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"LLM API 请求失败: {str(e)[:100]}")
+        logger.error("LLM API request failed: %s", e)
+        raise HTTPException(status_code=502, detail="LLM API 请求失败，请检查 API 配置和网络连接")
 
     try:
         content = resp.json()["choices"][0]["message"]["content"]
@@ -120,4 +125,5 @@ async def generate_structured(review_id: int, db: Session = Depends(get_db), cur
             return {"ok": True}
         raise HTTPException(status_code=500, detail="Failed to parse LLM response")
     except (KeyError, IndexError, json.JSONDecodeError) as e:
-        raise HTTPException(status_code=500, detail=f"LLM 返回内容解析失败: {str(e)[:100]}")
+        logger.error("LLM response parse failed: %s", e)
+        raise HTTPException(status_code=500, detail="LLM 返回内容解析失败，请重试")

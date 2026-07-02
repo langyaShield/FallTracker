@@ -9,6 +9,7 @@ from app.database import get_db, SessionLocal
 from app.models import Resume, User
 from app.schemas import ResumeOut, ResumeUpdate, ResumeListOut, BatchIdsRequest
 from app.auth import get_current_user
+from app.ratelimit import limiter
 
 router = APIRouter(prefix="/resumes", tags=["resumes"])
 
@@ -62,7 +63,7 @@ def _run_ocr_background(resume_id: int, file_path: str):
             failed = db.query(Resume).filter(Resume.id == resume_id).first()
             if failed:
                 failed.ocr_status = "failed"
-                failed.ocr_text = f"[OCR处理失败: {str(e)}]"
+                failed.ocr_text = "[OCR处理失败，请重试]"
                 db.commit()
         except Exception:
             try:
@@ -77,13 +78,22 @@ def _run_ocr_background(resume_id: int, file_path: str):
 
 
 def _validate_upload(file: UploadFile) -> tuple[bytes, str]:
-    """校验上传文件，返回 (file_bytes, ext)"""
+    """校验上传文件，返回 (file_bytes, ext)。使用分块读取防止超大文件耗尽内存。"""
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in ALLOWED_EXTS:
         raise HTTPException(status_code=400, detail=f"不支持的文件类型: {ext}，仅支持 PDF/图片/Word")
-    file_bytes = file.file.read()
-    if len(file_bytes) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=413, detail="文件过大，单文件不能超过 10MB")
+    # Security: read in chunks to prevent memory exhaustion from oversized uploads
+    chunks = []
+    total_size = 0
+    while True:
+        chunk = file.file.read(8192)
+        if not chunk:
+            break
+        total_size += len(chunk)
+        if total_size > MAX_FILE_SIZE:
+            raise HTTPException(status_code=413, detail="文件过大，单文件不能超过 10MB")
+        chunks.append(chunk)
+    file_bytes = b"".join(chunks)
     return file_bytes, ext
 
 
@@ -158,6 +168,7 @@ def search_resumes(
 
 # ─── 上传创建 ───
 
+@limiter.limit("5/minute")
 @router.post("", response_model=ResumeOut)
 def create_resume(
     background_tasks: BackgroundTasks,
@@ -202,17 +213,21 @@ def update_resume(
     resume_id: int,
     background_tasks: BackgroundTasks,
     name: Optional[str] = Form(None),
+    ocr_text: Optional[str] = Form(None),
     file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """更新简历：支持重命名和文件替换。替换文件后会自动重新OCR。"""
+    """更新简历：支持重命名、文件替换和OCR文本编辑。替换文件后会自动重新OCR。"""
     item = db.query(Resume).filter(Resume.id == resume_id, Resume.user_id == current_user.id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Resume not found")
 
     if name is not None:
         item.name = name
+
+    if ocr_text is not None:
+        item.ocr_text = ocr_text
 
     if file is not None:
         file_bytes, ext = _validate_upload(file)

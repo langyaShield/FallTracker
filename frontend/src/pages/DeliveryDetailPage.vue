@@ -1,12 +1,74 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Plus, Edit, Delete, ChatDotRound, Document, Timer } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, Plus, Edit, Delete, ChatDotRound, Document, Timer } from '@element-plus/icons-vue'
 import api from '@/lib/api'
 import { STATUS_COLUMNS, EVENT_TYPE_OPTIONS, EVENT_TYPE_LABEL_MAP } from '@/lib/constants'
 import { formatDateTime } from '@/lib/format'
 import { extractErrorMessage } from '@/lib/error'
+
+/** 轻量级 Markdown 渲染器（XSS 安全） */
+function renderMarkdown(text: string): string {
+  // Step 1: escape HTML entities to prevent XSS
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+
+  // Step 2: apply markdown transforms on escaped text
+  let html = escaped
+
+  // Code blocks (```)
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, _lang, code) => {
+    return `<pre class="md-code-block"><code>${code.trimEnd()}</code></pre>`
+  })
+
+  // Inline code
+  html = html.replace(/`([^`]+)`/g, '<code class="md-inline-code">$1</code>')
+
+  // Headers
+  html = html.replace(/^######\s+(.+)$/gm, '<h6>$1</h6>')
+  html = html.replace(/^#####\s+(.+)$/gm, '<h5>$1</h5>')
+  html = html.replace(/^####\s+(.+)$/gm, '<h4>$1</h4>')
+  html = html.replace(/^###\s+(.+)$/gm, '<h3>$1</h3>')
+  html = html.replace(/^##\s+(.+)$/gm, '<h2>$1</h2>')
+  html = html.replace(/^#\s+(.+)$/gm, '<h1>$1</h1>')
+
+  // Bold
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+
+  // Italic
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>')
+
+  // Links [text](url)
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+
+  // Unordered lists (- or *)
+  html = html.replace(/^[\-\*]\s+(.+)$/gm, '<li>$1</li>')
+  html = html.replace(/((?:<li>.*<\/li>\n?)+)/g, '<ul>$1</ul>')
+
+  // Line breaks (double newline = paragraph, single = <br>)
+  html = html
+    .split(/\n\n+/)
+    .map(block => {
+      if (block.startsWith('<h') || block.startsWith('<ul') || block.startsWith('<pre') || block.startsWith('<ol')) {
+        return block
+      }
+      return `<p>${block.replace(/\n/g, '<br>')}</p>`
+    })
+    .join('\n')
+
+  return html
+}
+
+const jdPreviewMode = ref(false)
+const renderedJd = computed(() => {
+  if (!delivery.value?.jd_text) return '<p style="color:#94a3b8">暂无JD描述</p>'
+  return renderMarkdown(delivery.value.jd_text)
+})
 
 const route = useRoute()
 const router = useRouter()
@@ -47,6 +109,7 @@ const events = ref<InterviewEvent[]>([])
 const resumes = ref<Resume[]>([])
 const loading = ref(false)
 const eventDialog = ref(false)
+const rightPanelCollapsed = ref(false)
 const editingEvent = ref<Partial<InterviewEvent>>({})
 
 const statusOptions = STATUS_COLUMNS.map((s) => ({ label: s.label, value: s.key }))
@@ -161,13 +224,16 @@ onMounted(() => {
       <span v-if="delivery?.created_at" class="detail-time">创建于 {{ formatDateTime(delivery.created_at) }}</span>
     </div>
 
-    <div class="detail-body">
+    <div class="detail-body" :class="{ 'right-collapsed': rightPanelCollapsed }">
       <div class="detail-left">
         <el-card class="info-card">
           <template #header>
             <div class="card-header">
               <span>基本信息</span>
-              <el-button type="primary" size="small" @click="saveDelivery">保存</el-button>
+              <div class="card-header-actions">
+                <el-button size="small" text @click="router.push('/profile')">打开信息库</el-button>
+                <el-button type="primary" size="small" @click="saveDelivery">保存</el-button>
+              </div>
             </div>
           </template>
           <el-form label-width="80px">
@@ -197,7 +263,25 @@ onMounted(() => {
               <el-input v-model="delivery!.link" />
             </el-form-item>
             <el-form-item label="JD描述">
-              <el-input v-model="delivery!.jd_text" type="textarea" :rows="4" />
+              <div class="jd-field">
+                <div class="jd-toolbar">
+                  <el-button
+                    :type="jdPreviewMode ? 'default' : 'primary'"
+                    size="small"
+                    text
+                    @click="jdPreviewMode = false"
+                  >编辑</el-button>
+                  <el-button
+                    :type="jdPreviewMode ? 'primary' : 'default'"
+                    size="small"
+                    text
+                    :icon="View"
+                    @click="jdPreviewMode = true"
+                  >预览</el-button>
+                </div>
+                <el-input v-if="!jdPreviewMode" v-model="delivery!.jd_text" type="textarea" :rows="4" />
+                <div v-else class="md-preview" v-html="renderedJd" />
+              </div>
             </el-form-item>
             <el-form-item label="简历">
               <el-select v-model="delivery!.resume_id" placeholder="选择简历（可选）" clearable style="width: 100%">
@@ -218,7 +302,11 @@ onMounted(() => {
         </el-card>
       </div>
 
-      <div class="detail-right">
+      <button class="panel-toggle-btn" :title="rightPanelCollapsed ? '展开时间线' : '收起时间线'" @click="rightPanelCollapsed = !rightPanelCollapsed">
+        <el-icon :size="14"><component :is="rightPanelCollapsed ? ArrowLeft : ArrowRight" /></el-icon>
+      </button>
+
+      <div v-show="!rightPanelCollapsed" class="detail-right">
         <el-card class="events-card">
           <template #header>
             <div class="card-header">
@@ -244,7 +332,7 @@ onMounted(() => {
                 <div v-if="evt.interviewer" class="event-meta">面试官：{{ evt.interviewer }}</div>
                 <div v-if="evt.location" class="event-meta">地点：{{ evt.location }}</div>
                 <div v-if="evt.meeting_link" class="event-meta">
-                  会议：<a :href="evt.meeting_link" target="_blank">{{ evt.meeting_link }}</a>
+                  会议：<a :href="evt.meeting_link" target="_blank" rel="noopener noreferrer">{{ evt.meeting_link }}</a>
                 </div>
                 <div v-if="evt.notes" class="event-notes">{{ evt.notes }}</div>
               </div>
@@ -324,8 +412,50 @@ onMounted(() => {
 
 .detail-body {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 24px;
+  grid-template-columns: 1fr 24px 1fr;
+  gap: 0;
+  transition: grid-template-columns 0.3s ease;
+}
+
+.detail-body.right-collapsed {
+  grid-template-columns: 1fr 24px 0fr;
+}
+
+.detail-body.right-collapsed .detail-right {
+  overflow: hidden;
+  min-width: 0;
+  opacity: 0;
+}
+
+.detail-left,
+.detail-right {
+  min-width: 0;
+}
+
+.detail-right {
+  transition: opacity 0.3s ease;
+  opacity: 1;
+}
+
+.panel-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  background: transparent;
+  border: none;
+  border-left: 1px solid #e2e8f0;
+  border-right: 1px solid #e2e8f0;
+  cursor: pointer;
+  color: #94a3b8;
+  transition: color 0.2s, background 0.2s;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.panel-toggle-btn:hover {
+  color: #3b82f6;
+  background: #f1f5f9;
 }
 
 .card-header {
@@ -333,6 +463,12 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   font-weight: 600;
+}
+
+.card-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .event-item {
@@ -379,10 +515,101 @@ onMounted(() => {
   color: #475569;
 }
 
+/* JD Markdown preview */
+.jd-field {
+  width: 100%;
+}
+
+.jd-toolbar {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.md-preview {
+  min-height: 80px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 12px 16px;
+  background: #f8fafc;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: #334155;
+}
+
+.md-preview :deep(h1),
+.md-preview :deep(h2),
+.md-preview :deep(h3),
+.md-preview :deep(h4),
+.md-preview :deep(h5),
+.md-preview :deep(h6) {
+  margin: 12px 0 6px;
+  color: #1e3a5f;
+}
+
+.md-preview :deep(h1) { font-size: 18px; }
+.md-preview :deep(h2) { font-size: 16px; }
+.md-preview :deep(h3) { font-size: 15px; }
+
+.md-preview :deep(p) {
+  margin: 6px 0;
+}
+
+.md-preview :deep(ul) {
+  padding-left: 20px;
+  margin: 6px 0;
+}
+
+.md-preview :deep(li) {
+  margin-bottom: 2px;
+}
+
+.md-preview :deep(a) {
+  color: #3b82f6;
+  text-decoration: none;
+}
+
+.md-preview :deep(a:hover) {
+  text-decoration: underline;
+}
+
+.md-preview :deep(strong) {
+  color: #1e293b;
+}
+
+.md-preview :deep(.md-code-block) {
+  background: #1e293b;
+  color: #e2e8f0;
+  padding: 12px 16px;
+  border-radius: 6px;
+  overflow-x: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 8px 0;
+}
+
+.md-preview :deep(.md-inline-code) {
+  background: #e2e8f0;
+  color: #e11d48;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 12px;
+}
+
 @media (max-width: 768px) {
   .detail-body {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr !important;
     gap: 12px;
+  }
+
+  .panel-toggle-btn {
+    display: none;
+  }
+
+  .detail-right {
+    opacity: 1 !important;
   }
 }
 </style>

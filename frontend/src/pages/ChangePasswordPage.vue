@@ -22,6 +22,10 @@ const handleSubmit = async () => {
     ElMessage.warning('请填写所有密码字段')
     return
   }
+  if (newPassword.value.length < 6 || newPassword.value.length > 128) {
+    ElMessage.warning('新密码长度应为 6-128 位')
+    return
+  }
   if (newPassword.value !== confirmPassword.value) {
     ElMessage.warning('两次输入的新密码不一致')
     return
@@ -66,7 +70,8 @@ const handleSubmit = async () => {
           <el-input
             v-model="newPassword"
             type="password"
-            placeholder="输入新密码（至少6位）"
+            placeholder="输入新密码（6-128位）"
+            maxlength="128"
             :prefix-icon="Lock"
             show-password
             @keyup.enter="handleSubmit"
@@ -76,6 +81,7 @@ const handleSubmit = async () => {
           <el-input
             v-model="confirmPassword"
             type="password"
+            maxlength="128"
             placeholder="再次输入新密码"
             :prefix-icon="Lock"
             show-password

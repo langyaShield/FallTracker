@@ -21,26 +21,34 @@ _fernet = Fernet(_derived_key)
 
 
 def encrypt_value(plaintext: str | None) -> str | None:
-    """Encrypt a plaintext string. Returns None if input is None/empty."""
+    """Encrypt a plaintext string. Returns None if input is None/empty.
+    Raises on encryption failure to prevent storing sensitive data in plaintext."""
     if not plaintext:
         return plaintext
-    try:
-        return _fernet.encrypt(plaintext.encode("utf-8")).decode("utf-8")
-    except Exception as e:
-        logger.warning("Encryption failed: %s", e)
+    # Already encrypted values (Fernet tokens start with 'gAAAAA') should not be re-encrypted
+    if plaintext.startswith("gAAAAA"):
         return plaintext
+    return _fernet.encrypt(plaintext.encode("utf-8")).decode("utf-8")
 
 
 def decrypt_value(ciphertext: str | None) -> str | None:
-    """Decrypt a ciphertext string. Falls back to plaintext for legacy unencrypted values."""
+    """Decrypt a ciphertext string. Falls back to plaintext only for values that
+    are clearly not Fernet tokens (legacy unencrypted data). Returns empty string
+    for corrupted or wrong-key Fernet tokens to avoid leaking ciphertext."""
     if not ciphertext:
         return ciphertext
     try:
         return _fernet.decrypt(ciphertext.encode("utf-8")).decode("utf-8")
     except InvalidToken:
-        # Legacy plaintext value — return as-is (not a Fernet token)
+        # Fernet tokens always start with 'gAAAAA' (base64 of version byte 0x80).
+        # If the value looks like a Fernet token but can't be decrypted, it's
+        # corrupted or was encrypted with a different key — return empty, not the ciphertext.
+        if ciphertext.startswith("gAAAAA"):
+            logger.warning("Fernet token decryption failed (wrong key or corrupted), len=%d", len(ciphertext))
+            return ""
+        # Legacy plaintext value — not a Fernet token, return as-is
         return ciphertext
     except Exception as e:
-        # Corrupted data — log warning and return empty to avoid leaking ciphertext
+        # Unexpected error — log and return empty to avoid leaking ciphertext
         logger.warning("Decryption failed for value (len=%d): %s", len(ciphertext), e)
         return ""

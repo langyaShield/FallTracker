@@ -18,6 +18,14 @@ const handleLogin = async () => {
     ElMessage.warning('请输入用户名和密码')
     return
   }
+  if (username.value.length > 50) {
+    ElMessage.warning('用户名不能超过 50 个字符')
+    return
+  }
+  if (password.value.length < 6 || password.value.length > 128) {
+    ElMessage.warning('密码长度应为 6-128 位')
+    return
+  }
   loading.value = true
   try {
     await authStore.login(username.value, password.value)
@@ -53,6 +61,7 @@ const handleLogin = async () => {
             v-model="username"
             placeholder="用户名"
             size="large"
+            maxlength="50"
             :prefix-icon="User"
             @keyup.enter="handleLogin"
           />
@@ -63,6 +72,7 @@ const handleLogin = async () => {
             type="password"
             placeholder="密码"
             size="large"
+            maxlength="128"
             :prefix-icon="Lock"
             show-password
             @keyup.enter="handleLogin"

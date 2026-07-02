@@ -99,9 +99,14 @@ _add_column_if_not_exists("crawler_configs", "extra_headers", "TEXT")
 _add_column_if_not_exists("crawler_configs", "last_error", "VARCHAR(500)")
 _add_column_if_not_exists("crawler_configs", "consecutive_failures", "INTEGER")
 _add_column_if_not_exists("crawler_results", "matched_items", "TEXT")
+_add_column_if_not_exists("user_settings", "email_template", "TEXT")
 
-# Security: block startup with default SECRET_KEY
-if settings.SECRET_KEY == "change-me-to-a-random-secret-key":
+# Security: block startup with default/weak SECRET_KEY
+_BLOCKED_SECRETS = {
+    "change-me-to-a-random-secret-key",
+    "falltracker-secret-key-change-me",
+}
+if settings.SECRET_KEY in _BLOCKED_SECRETS:
     raise RuntimeError(
         "SECURITY ERROR: Using default SECRET_KEY is not allowed. "
         "Please set a strong random SECRET_KEY in .env before starting the application."
@@ -181,8 +186,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
     allow_credentials=_allow_credentials,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
 # API routers
@@ -216,6 +221,10 @@ if os.path.isdir(FRONTEND_DIST):
     @app.get("/{full_path:path}")
     async def serve_spa(request: Request, full_path: str):
         """Serve the SPA - return index.html for all non-API, non-static routes."""
-        if full_path and os.path.isfile(os.path.join(FRONTEND_DIST, full_path)):
-            return FileResponse(os.path.join(FRONTEND_DIST, full_path))
+        if full_path:
+            # Security: prevent path traversal by resolving and checking the real path
+            resolved = os.path.realpath(os.path.join(FRONTEND_DIST, full_path))
+            dist_real = os.path.realpath(FRONTEND_DIST)
+            if resolved.startswith(dist_real + os.sep) and os.path.isfile(resolved):
+                return FileResponse(resolved)
         return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))

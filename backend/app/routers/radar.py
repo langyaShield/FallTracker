@@ -31,6 +31,7 @@ from app.schemas import (
 # 重新导出供 main.py 的 scheduler tick 与测试用例使用
 from app.services.radar.engine import execute_crawler as _execute_crawler  # noqa: F401
 from app.services.radar.scheduler import check_and_run_due_crawlers  # noqa: F401
+from app.ratelimit import limiter
 
 router = APIRouter(prefix="/radar", tags=["radar"])
 
@@ -157,6 +158,7 @@ def delete_config(
 # ─────────────────────────────────────────────
 
 
+@limiter.limit("2/minute")
 @router.post("/configs/{config_id}/run")
 def run_crawler_manual(
     config_id: int,

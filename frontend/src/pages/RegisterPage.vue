@@ -24,8 +24,21 @@ const handleRegister = async () => {
     ElMessage.warning('请输入用户名和密码')
     return
   }
+  const trimmedUsername = username.value.trim()
+  if (trimmedUsername.length < 2 || trimmedUsername.length > 50) {
+    ElMessage.warning('用户名长度必须在 2-50 个字符之间')
+    return
+  }
+  if (!/^[a-zA-Z0-9_\u4e00-\u9fff]+$/.test(trimmedUsername)) {
+    ElMessage.warning('用户名只能包含字母、数字、下划线和中文')
+    return
+  }
   if (!inviteCode.value) {
     ElMessage.warning('请输入邀请码')
+    return
+  }
+  if (password.value.length < 6 || password.value.length > 128) {
+    ElMessage.warning('密码长度应为 6-128 位')
     return
   }
   if (password.value !== confirmPassword.value) {
@@ -74,8 +87,9 @@ const handleRegister = async () => {
         <el-form-item>
           <el-input
             v-model="username"
-            placeholder="用户名"
+            placeholder="用户名（2-50字符，字母/数字/下划线/中文）"
             size="large"
+            maxlength="50"
             :prefix-icon="User"
           />
         </el-form-item>
@@ -83,8 +97,9 @@ const handleRegister = async () => {
           <el-input
             v-model="password"
             type="password"
-            placeholder="密码"
+            placeholder="密码（6-128位）"
             size="large"
+            maxlength="128"
             :prefix-icon="Lock"
             show-password
           />
@@ -95,6 +110,7 @@ const handleRegister = async () => {
             type="password"
             placeholder="确认密码"
             size="large"
+            maxlength="128"
             :prefix-icon="Lock"
             show-password
             @keyup.enter="handleRegister"

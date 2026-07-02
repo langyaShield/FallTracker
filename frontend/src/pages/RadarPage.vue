@@ -624,7 +624,7 @@ onMounted(() => {
                 </el-table-column>
                 <el-table-column label="链接" width="60">
                   <template #default="{ row }">
-                    <a v-if="row.link" :href="row.link" target="_blank" style="color: #409eff">查看</a>
+                    <a v-if="row.link" :href="row.link" target="_blank" rel="noopener noreferrer" style="color: #409eff">查看</a>
                     <span v-else>-</span>
                   </template>
                 </el-table-column>

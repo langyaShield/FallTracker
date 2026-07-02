@@ -96,7 +96,7 @@ const routes: RouteRecordRaw[] = [
         path: 'admin',
         name: 'admin',
         component: () => import('@/pages/AdminPage.vue'),
-        meta: { title: '用户管理' },
+        meta: { title: '用户管理', requiresAdmin: true },
       },
     ],
   },
@@ -124,6 +124,20 @@ router.beforeEach(async (to, _from, next) => {
         // fetchMe 失败（token 过期等），auth 拦截器会处理跳转
       }
     }
+
+    // Security: block disabled users from accessing the app
+    if (!isPublic && authStore.user?.is_disabled) {
+      authStore.logout()
+      next('/login')
+      return
+    }
+
+    // Security: restrict admin-only routes
+    if (to.meta.requiresAdmin && !authStore.user?.is_admin) {
+      next('/dashboard')
+      return
+    }
+
     next()
   }
 })

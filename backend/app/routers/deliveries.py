@@ -1,23 +1,42 @@
 import csv
 import io
+import json
+import logging
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional
+from typing import Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
+logger = logging.getLogger("falltracker")
+
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Delivery, InterviewEvent, User
+from app.models import Delivery, DeliveryLog, DeliveryNote, InterviewEvent, User
+from app.ratelimit import limiter
 from app.schemas import (
     DeliveryCreate, DeliveryUpdate, DeliveryOut,
+    DeliveryLogOut, DeliveryNoteCreate, DeliveryNoteUpdate, DeliveryNoteOut,
     InterviewEventCreate, InterviewEventUpdate, InterviewEventOut,
     ImportPreviewResponse, ImportResponse,
     BatchStatusUpdate, BatchTagsUpdate, BatchIdsRequest,
+    TagCountOut,
     VALID_DELIVERY_STATUSES,
 )
 from app.auth import get_current_user
+
+
+def log_delivery_action(db: Session, delivery_id: int, user_id: int, action: str, detail: str = None):
+    """记录投递活动日志。"""
+    log = DeliveryLog(
+        delivery_id=delivery_id,
+        user_id=user_id,
+        action=action,
+        detail=detail,
+    )
+    db.add(log)
+    db.commit()
 
 router = APIRouter(prefix="/deliveries", tags=["deliveries"])
 
@@ -59,8 +78,15 @@ def list_deliveries(
     q = db.query(Delivery).filter(Delivery.user_id == current_user.id)
 
     if search:
-        pattern = f"%{search}%"
-        q = q.filter(or_(Delivery.company.ilike(pattern), Delivery.position.ilike(pattern)))
+        # Security: escape SQL LIKE wildcards to prevent user from manipulating match behavior
+        safe_search = search.replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{safe_search}%"
+        # Search company, position, and tags
+        q = q.filter(or_(
+            Delivery.company.ilike(pattern),
+            Delivery.position.ilike(pattern),
+            Delivery.tags.cast(str).ilike(pattern),
+        ))
 
     if status:
         q = q.filter(Delivery.status.in_(status))
@@ -108,6 +134,22 @@ def upcoming_deadlines(
     )
 
 
+@router.get("/tags", response_model=List[TagCountOut])
+def get_all_tags(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取当前用户所有投递中使用过的标签及其出现次数，按次数降序。"""
+    deliveries = db.query(Delivery).filter(Delivery.user_id == current_user.id).all()
+    tag_counts: dict[str, int] = {}
+    for d in deliveries:
+        for tag in (d.tags or []):
+            tag_counts[tag] = tag_counts.get(tag, 0) + 1
+    result = [TagCountOut(tag=t, count=c) for t, c in tag_counts.items()]
+    result.sort(key=lambda x: x.count, reverse=True)
+    return result
+
+
 @router.post("/import/preview", response_model=ImportPreviewResponse)
 async def import_preview(
     file: UploadFile = File(...),
@@ -119,8 +161,8 @@ async def import_preview(
     reader = csv.DictReader(io.StringIO(text))
 
     # Map headers
-    raw_headers = reader.fieldnames or []
-    mapped_headers = [CSV_HEADER_MAP.get(h.strip(), h.strip()) for h in raw_headers]
+    raw_headers = [h.strip() for h in (reader.fieldnames or [])]
+    mapped_headers = [CSV_HEADER_MAP.get(h, h) for h in raw_headers]
 
     rows = []
     for raw_row in reader:
@@ -132,21 +174,34 @@ async def import_preview(
 
     return ImportPreviewResponse(
         headers=mapped_headers,
+        raw_headers=raw_headers,
         rows=rows[:20],  # preview first 20 rows
         total=len(rows),
     )
 
 
+@limiter.limit("5/minute")
 @router.post("/import", response_model=ImportResponse)
 async def import_csv(
     file: UploadFile = File(...),
+    mapping: Optional[str] = Form(None, description="JSON string: raw_header -> delivery field"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """正式导入 CSV 文件。"""
+    """正式导入 CSV 文件。可传入自定义列映射 mapping（JSON: {csv列名: delivery字段名}）。"""
     content = await file.read()
     text = content.decode("utf-8-sig")
     reader = csv.DictReader(io.StringIO(text))
+
+    # Build effective mapping: default + user overrides
+    effective_map: Dict[str, str] = dict(CSV_HEADER_MAP)
+    if mapping:
+        try:
+            user_map = json.loads(mapping)
+            if isinstance(user_map, dict):
+                effective_map.update(user_map)
+        except (json.JSONDecodeError, TypeError):
+            pass
 
     created = 0
     skipped = 0
@@ -155,7 +210,7 @@ async def import_csv(
     for idx, raw_row in enumerate(reader, start=2):  # start=2 because row 1 is header
         row = {}
         for raw_key, value in raw_row.items():
-            mapped_key = CSV_HEADER_MAP.get(raw_key.strip(), raw_key.strip())
+            mapped_key = effective_map.get(raw_key.strip(), raw_key.strip())
             row[mapped_key] = value.strip() if value else ""
 
         company = row.get("company", "").strip()
@@ -199,7 +254,8 @@ async def import_csv(
         db.commit()
     except Exception as e:
         db.rollback()
-        errors.append(f"数据库提交失败: {e}")
+        logger.error("CSV import commit failed: %s", e)
+        errors.append("数据库提交失败，请重试")
         return ImportResponse(created=0, skipped=skipped + created, errors=errors)
 
     return ImportResponse(created=created, skipped=skipped, errors=errors)
@@ -319,10 +375,14 @@ def update_delivery(delivery_id: int, data: DeliveryUpdate, db: Session = Depend
     item = db.query(Delivery).filter(Delivery.id == delivery_id, Delivery.user_id == current_user.id).first()
     if not item:
         raise HTTPException(status_code=404, detail="Delivery not found")
+    old_status = item.status
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(item, field, value)
     db.commit()
     db.refresh(item)
+    # N1: 记录状态变更日志
+    if data.status is not None and data.status != old_status:
+        log_delivery_action(db, delivery_id, current_user.id, "status_change", f"状态从 {old_status} 变更为 {data.status}")
     return item
 
 
@@ -361,4 +421,118 @@ def create_event(delivery_id: int, data: InterviewEventCreate, db: Session = Dep
     db.add(db_item)
     db.commit()
     db.refresh(db_item)
+    # N1: 记录事件添加日志
+    log_delivery_action(db, delivery_id, current_user.id, "event_added", f"添加了{data.event_type}事件")
     return db_item
+
+
+# === N1: Delivery Activity Logs ===
+
+
+@router.get("/{delivery_id}/logs", response_model=List[DeliveryLogOut])
+def list_delivery_logs(
+    delivery_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取某投递的活动日志，按时间倒序。"""
+    delivery = db.query(Delivery).filter(Delivery.id == delivery_id, Delivery.user_id == current_user.id).first()
+    if not delivery:
+        raise HTTPException(status_code=404, detail="Delivery not found")
+    return (
+        db.query(DeliveryLog)
+        .filter(DeliveryLog.delivery_id == delivery_id)
+        .order_by(DeliveryLog.created_at.desc())
+        .all()
+    )
+
+
+# === N9: Delivery Notes CRUD ===
+
+
+@router.get("/{delivery_id}/notes", response_model=List[DeliveryNoteOut])
+def list_delivery_notes(
+    delivery_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """获取某投递的所有备注，按时间倒序。"""
+    delivery = db.query(Delivery).filter(Delivery.id == delivery_id, Delivery.user_id == current_user.id).first()
+    if not delivery:
+        raise HTTPException(status_code=404, detail="Delivery not found")
+    return (
+        db.query(DeliveryNote)
+        .filter(DeliveryNote.delivery_id == delivery_id)
+        .order_by(DeliveryNote.created_at.desc())
+        .all()
+    )
+
+
+@router.post("/{delivery_id}/notes", response_model=DeliveryNoteOut)
+def create_delivery_note(
+    delivery_id: int,
+    data: DeliveryNoteCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """为某投递创建备注，并记录活动日志。"""
+    delivery = db.query(Delivery).filter(Delivery.id == delivery_id, Delivery.user_id == current_user.id).first()
+    if not delivery:
+        raise HTTPException(status_code=404, detail="Delivery not found")
+    note = DeliveryNote(
+        delivery_id=delivery_id,
+        user_id=current_user.id,
+        content=data.content,
+    )
+    db.add(note)
+    db.commit()
+    db.refresh(note)
+    # N1: 记录备注添加日志
+    log_delivery_action(db, delivery_id, current_user.id, "note_added", f"添加了备注")
+    return note
+
+
+@router.put("/{delivery_id}/notes/{note_id}", response_model=DeliveryNoteOut)
+def update_delivery_note(
+    delivery_id: int,
+    note_id: int,
+    data: DeliveryNoteUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """更新某投递的指定备注。"""
+    delivery = db.query(Delivery).filter(Delivery.id == delivery_id, Delivery.user_id == current_user.id).first()
+    if not delivery:
+        raise HTTPException(status_code=404, detail="Delivery not found")
+    note = db.query(DeliveryNote).filter(
+        DeliveryNote.id == note_id,
+        DeliveryNote.delivery_id == delivery_id,
+    ).first()
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    note.content = data.content
+    db.commit()
+    db.refresh(note)
+    return note
+
+
+@router.delete("/{delivery_id}/notes/{note_id}")
+def delete_delivery_note(
+    delivery_id: int,
+    note_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """删除某投递的指定备注。"""
+    delivery = db.query(Delivery).filter(Delivery.id == delivery_id, Delivery.user_id == current_user.id).first()
+    if not delivery:
+        raise HTTPException(status_code=404, detail="Delivery not found")
+    note = db.query(DeliveryNote).filter(
+        DeliveryNote.id == note_id,
+        DeliveryNote.delivery_id == delivery_id,
+    ).first()
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+    db.delete(note)
+    db.commit()
+    return {"ok": True}

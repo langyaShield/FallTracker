@@ -51,15 +51,18 @@ echo ""
 # Step 3: Copy .env if not exists
 echo "[3/4] Checking .env configuration..."
 if [ ! -f backend/.env ]; then
-    cat > backend/.env << 'ENVEOF'
+    # Generate a random SECRET_KEY (64 hex chars = 256 bits)
+    GENERATED_SECRET=$(openssl rand -hex 32 2>/dev/null || python3 -c "import secrets; print(secrets.token_hex(32))" 2>/dev/null || head -c 64 /dev/urandom | od -An -tx1 | tr -d ' \n')
+    cat > backend/.env << ENVEOF
 DATABASE_URL=sqlite:///./falltracker.db
-SECRET_KEY=falltracker-secret-key-change-me
+SECRET_KEY=${GENERATED_SECRET}
 ACCESS_TOKEN_EXPIRE_MINUTES=10080
 LLM_API_KEY=
 LLM_API_BASE=https://api.deepseek.com/v1
 LLM_MODEL=deepseek-chat
 ENVEOF
-    echo "  ✓ Created default backend/.env (please update SECRET_KEY)"
+    echo "  ✓ Created backend/.env with randomly generated SECRET_KEY"
+    echo "  ⚠ Please review backend/.env and configure LLM_API_KEY if needed"
 else
     echo "  ✓ backend/.env already exists"
 fi

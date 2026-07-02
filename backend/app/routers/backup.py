@@ -17,11 +17,13 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user
 from app.crypto import decrypt_value
 from app.database import get_db, SessionLocal
+from app.ratelimit import limiter
 from app.models import (
     Bookmark,
     CrawlerConfig,
     CrawlerResult,
     Delivery,
+    DeliveryNote,
     InterviewEvent,
     Notification,
     ProfileField,
@@ -193,6 +195,20 @@ def _gather_backup_data(db: Session, uid: int) -> dict:
     bookmarks = db.query(Bookmark).filter(Bookmark.user_id == uid).all()
     bookmark_list = [_model_to_dict(b) for b in bookmarks]
 
+    # DeliveryNote
+    notes = (
+        db.query(DeliveryNote)
+        .join(Delivery, DeliveryNote.delivery_id == Delivery.id)
+        .filter(Delivery.user_id == uid)
+        .all()
+    )
+    note_list = []
+    for n in notes:
+        d = _model_to_dict(n)
+        d["_old_delivery_id"] = n.delivery_id
+        d.pop("delivery_id", None)
+        note_list.append(d)
+
     return {
         "version": BACKUP_VERSION,
         "exported_at": datetime.now(timezone.utc).isoformat(),
@@ -206,6 +222,7 @@ def _gather_backup_data(db: Session, uid: int) -> dict:
         "notifications": notification_list,
         "profile_fields": profile_field_list,
         "bookmarks": bookmark_list,
+        "delivery_notes": note_list,
     }
 
 
@@ -229,6 +246,9 @@ def _import_backup_data(db: Session, uid: int, data: dict) -> dict:
     db.query(Notification).filter(Notification.user_id == uid).delete()
     db.query(Review).filter(Review.user_id == uid).delete()
     if delivery_ids:
+        db.query(DeliveryNote).filter(
+            DeliveryNote.delivery_id.in_(delivery_ids)
+        ).delete(synchronize_session=False)
         db.query(InterviewEvent).filter(
             InterviewEvent.delivery_id.in_(delivery_ids)
         ).delete(synchronize_session=False)
@@ -351,6 +371,18 @@ def _import_backup_data(db: Session, uid: int, data: dict) -> dict:
     db.flush()
     stats["bookmarks"] = len(data.get("bookmarks", []))
 
+    # ── 11. DeliveryNote ──
+    for item in data.get("delivery_notes", []):
+        old_delivery_id = item.pop("_old_delivery_id", None)
+        new_delivery_id = delivery_id_map.get(old_delivery_id)
+        if new_delivery_id is None:
+            continue
+        prepared = _prepare_item(item, DeliveryNote)
+        obj = DeliveryNote(user_id=uid, delivery_id=new_delivery_id, **prepared)
+        db.add(obj)
+    db.flush()
+    stats["delivery_notes"] = len(data.get("delivery_notes", []))
+
     db.commit()
     return stats
 
@@ -383,6 +415,10 @@ def export_data(
 # ═══════════════════════════════════════════════════════════════
 
 
+MAX_IMPORT_SIZE = 50 * 1024 * 1024  # 50MB
+
+
+@limiter.limit("3/minute")
 @router.post("/import")
 def import_data(
     file: UploadFile = File(...),
@@ -390,8 +426,20 @@ def import_data(
     current_user: User = Depends(get_current_user),
 ):
     """导入 JSON 备份文件恢复数据（覆盖模式：先清空再导入）。"""
+    # Security: limit upload size to prevent DoS
+    chunks = []
+    total_size = 0
+    while True:
+        chunk = file.file.read(8192)
+        if not chunk:
+            break
+        total_size += len(chunk)
+        if total_size > MAX_IMPORT_SIZE:
+            raise HTTPException(status_code=413, detail="备份文件过大，不能超过 50MB")
+        chunks.append(chunk)
+    content = b"".join(chunks)
+
     try:
-        content = file.file.read()
         data = json.loads(content)
     except (json.JSONDecodeError, UnicodeDecodeError) as e:
         raise HTTPException(status_code=400, detail=f"无效的 JSON 文件: {e}")
@@ -423,9 +471,11 @@ def _get_cos_client(s: UserSettings):
     except ImportError:
         raise HTTPException(status_code=500, detail="COS SDK 未安装，请安装 cos-python-sdk-v5")
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"COS 配置错误: {e}")
+        logger.error("COS config error: %s", e)
+        raise HTTPException(status_code=400, detail="COS 配置有误，请检查参数设置")
 
 
+@limiter.limit("3/minute")
 @router.post("/upload-to-cos")
 def upload_to_cos(
     db: Session = Depends(get_db),
@@ -455,8 +505,8 @@ def upload_to_cos(
             ContentType="application/json",
         )
     except Exception as e:
-        logger.error("COS upload failed: %s", e)
-        raise HTTPException(status_code=500, detail=f"上传到 COS 失败: {e}")
+        logger.error("COS upload failed: key=%s, error=%s", file_key, e)
+        raise HTTPException(status_code=500, detail="上传到 COS 失败，请检查网络和 COS 配置")
 
     return {
         "success": True,
@@ -483,7 +533,7 @@ def list_cos_backups(
         resp = client.list_objects(Bucket=bucket, Prefix=path_prefix)
     except Exception as e:
         logger.error("COS list failed: %s", e)
-        raise HTTPException(status_code=500, detail=f"获取 COS 文件列表失败: {e}")
+        raise HTTPException(status_code=500, detail="获取 COS 文件列表失败，请检查网络和 COS 配置")
 
     files = []
     for obj in resp.get("Contents", []):
@@ -517,8 +567,8 @@ def delete_cos_backup(
         client.delete_object(Bucket=bucket, Key=file_key)
         logger.info("COS delete: key=%s", file_key)
     except Exception as e:
-        logger.error("COS delete failed: %s", e)
-        raise HTTPException(status_code=500, detail=f"删除 COS 文件失败: {e}")
+        logger.error("COS delete failed: key=%s, error=%s", file_key, e)
+        raise HTTPException(status_code=500, detail="删除 COS 文件失败，请检查网络和 COS 配置")
 
     return {"success": True, "file_key": file_key, "message": "备份已删除"}
 
@@ -556,12 +606,13 @@ def rename_cos_backup(
         client.delete_object(Bucket=bucket, Key=file_key)
         logger.info("COS rename: %s -> %s", file_key, new_key)
     except Exception as e:
-        logger.error("COS rename failed: %s", e)
-        raise HTTPException(status_code=500, detail=f"重命名 COS 文件失败: {e}")
+        logger.error("COS rename failed: key=%s, error=%s", file_key, e)
+        raise HTTPException(status_code=500, detail="重命名 COS 文件失败，请检查网络和 COS 配置")
 
     return {"success": True, "old_key": file_key, "new_key": new_key, "message": "备份已重命名"}
 
 
+@limiter.limit("3/minute")
 @router.post("/restore-from-cos")
 def restore_from_cos(
     file_key: str = Form(...),
@@ -572,6 +623,11 @@ def restore_from_cos(
     s = db.query(UserSettings).filter(UserSettings.user_id == current_user.id).first()
     if not s:
         raise HTTPException(status_code=400, detail="请先在设置中配置腾讯云 COS 参数")
+
+    # Security: validate file_key is within the user's backup path prefix
+    path_prefix = (s.cos_path or "backups/").rstrip("/") + "/"
+    if not file_key.startswith(path_prefix):
+        raise HTTPException(status_code=403, detail="无权访问该备份文件")
 
     client, bucket, region = _get_cos_client(s)
 
@@ -592,8 +648,8 @@ def restore_from_cos(
             len(content),
         )
     except Exception as e:
-        logger.error("COS download failed: %s", e)
-        raise HTTPException(status_code=500, detail=f"从 COS 下载失败: {e}")
+        logger.error("COS download failed: key=%s, error=%s", file_key, e)
+        raise HTTPException(status_code=500, detail="从 COS 下载备份文件失败，请检查 COS 配置")
 
     try:
         data = json.loads(content)
