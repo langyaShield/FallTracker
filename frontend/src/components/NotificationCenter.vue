@@ -48,7 +48,7 @@ const filteredItems = computed(() => {
   if (typeFilter.value === 'all') return items.value
   const opt = typeFilterOptions.find(o => o.value === typeFilter.value)
   if (!opt || opt.types.length === 0) return items.value
-  return items.value.filter(n => opt.types.includes(n.type))
+  return items.value.filter(n => (opt.types as string[]).includes(n.type))
 })
 
 let pollTimer: ReturnType<typeof setInterval> | null = null

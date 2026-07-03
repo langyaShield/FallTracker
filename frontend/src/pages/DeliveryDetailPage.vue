@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, ArrowRight, Plus, Edit, Delete, ChatDotRound, Document, Timer } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, Plus, Edit, Delete, ChatDotRound, Document, Timer, View } from '@element-plus/icons-vue'
 import api from '@/lib/api'
 import { STATUS_COLUMNS, EVENT_TYPE_OPTIONS, EVENT_TYPE_LABEL_MAP } from '@/lib/constants'
 import { formatDateTime } from '@/lib/format'

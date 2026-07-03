@@ -63,6 +63,18 @@ mcp = FastMCP(
         "from the request context before performing any action."
     ),
     stateless_http=True,
+    transport_security={
+        "enable_dns_rebinding_protection": True,
+        "allowed_hosts": [
+            "127.0.0.1:8000",
+            "127.0.0.1:80",
+            "localhost:8000",
+            "localhost:80",
+            "101.43.163.120",
+            "101.43.163.120:80",
+            "101.43.163.120:8000",
+        ],
+    },
 )
 
 

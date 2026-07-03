@@ -32,6 +32,8 @@ services:
     ports:
       # 公网访问：http://YOUR_SERVER_IP
       - "80:8000"
+      # MCP 接口：http://YOUR_SERVER_IP:8000/mcp
+      - "8000:8000"
 
     volumes:
       # Persistent SQLite database (stored in /app/backend/data/)

@@ -229,7 +229,9 @@ if os.path.isdir(assets_dir):
 # so we mount at root to make the final URL /mcp. Placed after /assets so
 # static files are served by the main app first; placed before the SPA
 # catch-all so /mcp is handled by the MCP subapp.
-app.mount("/", mcp.streamable_http_app())
+# streamable_http_app() internally registers a Route at /mcp,
+# so we mount at root to expose it at /mcp (not /mcp/mcp).
+app.mount("", mcp.streamable_http_app())
 
 if os.path.isdir(FRONTEND_DIST):
     @app.get("/{full_path:path}")

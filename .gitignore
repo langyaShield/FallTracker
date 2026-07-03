@@ -55,3 +55,6 @@ sessions/
 
 # Internal multi-agent collaboration log (not for public repo)
 linkup.md
+
+# Login credentials
+login.json
