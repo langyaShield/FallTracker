@@ -2,8 +2,9 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Search, Download, Upload, Delete, Grid, List } from '@element-plus/icons-vue'
+import { Plus, Search, Download, Upload, Delete, Grid, List, ArrowDown } from '@element-plus/icons-vue'
 import api from '@/lib/api'
+import { useUndoDelete } from '@/composables/useUndoDelete'
 import { STATUS_COLUMNS, STATUS_LABEL_MAP, STATUS_COLOR_MAP } from '@/lib/constants'
 import { formatDateTime } from '@/lib/format'
 import { extractErrorMessage } from '@/lib/error'
@@ -37,6 +38,16 @@ const loading = ref(false)
 const dialogVisible = ref(false)
 const editing = ref<Partial<Delivery>>({})
 
+// 删除撤销
+const { pendingIds: deletingDeliveryIds, requestDelete: requestDeleteDelivery } = useUndoDelete<Delivery>({
+  getId: (d) => d.id,
+  getName: (d) => `${d.company} - ${d.position}`,
+  deleteFn: async (d) => {
+    await api.delete(`/deliveries/${d.id}`)
+  },
+  onSuccess: () => fetchDeliveries(),
+})
+
 // Drag state
 const draggedItem = ref<Delivery | null>(null)
 const dragOverColumn = ref<string | null>(null)
@@ -60,6 +71,7 @@ const sortOption = ref('created_at_desc')
 const sortOptions = [
   { label: '创建时间 ↓', value: 'created_at_desc' },
   { label: '创建时间 ↑', value: 'created_at_asc' },
+  { label: '最近更新 ↓', value: 'updated_at_desc' },
   { label: '截止日期 ↑', value: 'deadline_asc' },
   { label: '公司 A-Z', value: 'company_asc' },
 ]
@@ -108,6 +120,9 @@ const buildQueryParams = () => {
   } else if (sort === 'created_at_asc') {
     params.sort_by = 'created_at'
     params.sort_order = 'asc'
+  } else if (sort === 'updated_at_desc') {
+    params.sort_by = 'updated_at'
+    params.sort_order = 'desc'
   } else if (sort === 'deadline_asc') {
     params.sort_by = 'deadline'
     params.sort_order = 'asc'
@@ -120,7 +135,7 @@ const buildQueryParams = () => {
 }
 
 // Deliveries returned from backend are already filtered/sorted
-const filteredDeliveries = computed(() => deliveries.value)
+const filteredDeliveries = computed(() => deliveries.value.filter((d) => !deletingDeliveryIds.value.has(d.id)))
 
 // --- View mode (kanban / list) ---
 const viewMode = ref<'kanban' | 'list'>(
@@ -130,6 +145,31 @@ const viewMode = ref<'kanban' | 'list'>(
 watch(viewMode, (v) => {
   localStorage.setItem('dashboard_view_mode', v)
 })
+
+// --- Kanban column collapse state ---
+const collapsedColumns = ref<Set<string>>(new Set())
+
+const toggleColumn = (key: string) => {
+  const s = new Set(collapsedColumns.value)
+  if (s.has(key)) {
+    s.delete(key)
+  } else {
+    s.add(key)
+  }
+  collapsedColumns.value = s
+}
+
+const allColumnsCollapsed = computed(() =>
+  STATUS_COLUMNS.length > 0 && STATUS_COLUMNS.every((c) => collapsedColumns.value.has(c.key))
+)
+
+const toggleAllColumns = () => {
+  if (allColumnsCollapsed.value) {
+    collapsedColumns.value = new Set()
+  } else {
+    collapsedColumns.value = new Set(STATUS_COLUMNS.map((c) => c.key))
+  }
+}
 
 // --- List view sorting ---
 const listSortProp = ref<string>('')
@@ -438,15 +478,8 @@ const saveDelivery = async () => {
   }
 }
 
-const deleteDelivery = async (id: number) => {
-  try {
-    await ElMessageBox.confirm('确定删除这条投递记录吗？', '提示', { type: 'warning' })
-    await api.delete(`/deliveries/${id}`)
-    ElMessage.success('删除成功')
-    fetchDeliveries()
-  } catch {
-    // cancelled
-  }
+const deleteDelivery = (item: Delivery) => {
+  requestDeleteDelivery(item)
 }
 
 // Drag feedback: briefly highlight card after successful drop
@@ -516,6 +549,13 @@ onMounted(() => {
           <el-button :type="viewMode === 'list' ? 'primary' : 'default'" :icon="List" size="small" @click="viewMode = 'list'" />
         </el-button-group>
         <el-button
+          v-if="viewMode === 'kanban'"
+          size="small"
+          @click="toggleAllColumns"
+        >
+          {{ allColumnsCollapsed ? '展开全部' : '收起全部' }}
+        </el-button>
+        <el-button
           :type="batchMode ? 'warning' : 'default'"
           size="small"
           @click="toggleBatchMode"
@@ -581,16 +621,24 @@ onMounted(() => {
           class="kanban-column"
           :class="{ 'drag-over': dragOverColumn === col.key }"
         >
-        <div class="column-header" :style="{ borderColor: col.color }">
+        <div class="column-header" :style="{ borderColor: col.color }" @click="toggleColumn(col.key)">
           <span class="column-title">{{ col.label }}</span>
           <div class="column-header-right">
             <el-tag size="small" :style="{ backgroundColor: col.color + '20', color: col.color, borderColor: col.color }">
               {{ groupedDeliveries[col.key]?.length || 0 }}
             </el-tag>
-            <button class="column-add-btn" :title="`添加${col.label}投递`" @click="openAdd(col.key)">+</button>
+            <button
+              class="column-add-btn"
+              :title="`添加${col.label}投递`"
+              @click.stop="openAdd(col.key)"
+            >+</button>
+            <el-icon class="column-collapse-icon" :class="{ 'is-collapsed': collapsedColumns.has(col.key) }">
+              <ArrowDown />
+            </el-icon>
           </div>
         </div>
         <div
+          v-show="!collapsedColumns.has(col.key)"
           class="column-body"
           @dragover="onDragOver($event, col.key)"
           @dragleave="onDragLeave($event, col.key)"
@@ -628,7 +676,7 @@ onMounted(() => {
                   text
                   size="small"
                   type="danger"
-                  @click.stop="deleteDelivery(item.id)"
+                  @click.stop="deleteDelivery(item)"
                   class="delete-btn"
                 >
                   删除
@@ -690,6 +738,28 @@ onMounted(() => {
         <el-table-column prop="created_at" label="创建时间" width="160" sortable="custom">
           <template #default="{ row }">
             {{ formatDateTime(row.created_at) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="120" fixed="right">
+          <template #default="{ row }">
+            <el-dropdown
+              size="small"
+              trigger="click"
+              @command="(status: string) => updateStatus(row, status)"
+            >
+              <el-button text size="small" type="primary" @click.stop>推进状态</el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item
+                    v-for="s in STATUS_COLUMNS.filter((s) => s.key !== row.status)"
+                    :key="s.key"
+                    :command="s.key"
+                  >
+                    {{ s.label }}
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
           </template>
         </el-table-column>
       </el-table>
@@ -857,6 +927,11 @@ onMounted(() => {
   overflow-x: auto;
   height: calc(100vh - 210px);
   transition: height 0.2s;
+  padding-bottom: 8px;
+  background:
+    linear-gradient(to right, #f1f5f9 0%, transparent 16px),
+    linear-gradient(to left, #f1f5f9 0%, transparent 16px);
+  background-attachment: local, local;
 }
 
 .kanban-board.batch-mode {
@@ -1107,6 +1182,21 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.column-collapse-icon {
+  color: #94a3b8;
+  font-size: 14px;
+  transition: transform 0.2s;
+  cursor: pointer;
+}
+
+.column-collapse-icon.is-collapsed {
+  transform: rotate(-90deg);
+}
+
+.column-header {
+  cursor: pointer;
 }
 
 .column-add-btn {

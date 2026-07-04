@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { useUndoDelete } from '@/composables/useUndoDelete'
 import {
   Plus, View, Delete, Edit, Search, Download,
   RefreshRight, Check, Close, Sort
@@ -22,7 +24,16 @@ interface Resume {
   created_at: string
 }
 
+interface Delivery {
+  id: number
+  company: string
+  position: string
+  resume_id?: number | null
+}
+
+const router = useRouter()
 const resumes = ref<Resume[]>([])
+const deliveries = ref<Delivery[]>([])
 const total = ref(0)
 const loading = ref(false)
 
@@ -58,6 +69,22 @@ const ocrSaving = ref(false)
 // 批量选择
 const selectedIds = ref<number[]>([])
 const selectMode = ref(false)
+
+// OCR 重试中 ID 集合（用于行内 loading）
+const retryingIds = ref<Set<number>>(new Set())
+
+// 删除撤销
+const { pendingIds: deletingResumeIds, requestDelete: requestDeleteResume } = useUndoDelete<Resume>({
+  getId: (r) => r.id,
+  getName: (r) => r.name,
+  deleteFn: async (r) => {
+    await api.delete(`/resumes/${r.id}`)
+  },
+  onSuccess: () => {
+    fetchResumes()
+    fetchDeliveries()
+  },
+})
 
 // OCR 轮询
 let pollTimer: ReturnType<typeof setInterval> | null = null
@@ -117,6 +144,31 @@ const fetchResumes = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const fetchDeliveries = async () => {
+  try {
+    const res = await api.get('/deliveries')
+    deliveries.value = res.data || []
+  } catch {
+    // 非关键信息，静默失败
+  }
+}
+
+const deliveryCountMap = computed(() => {
+  const map: Record<number, number> = {}
+  for (const d of deliveries.value) {
+    if (d.resume_id) {
+      map[d.resume_id] = (map[d.resume_id] || 0) + 1
+    }
+  }
+  return map
+})
+
+const displayedResumes = computed(() => resumes.value.filter((r) => !deletingResumeIds.value.has(r.id)))
+
+const goToDeliveries = (resume: Resume) => {
+  router.push({ path: '/dashboard', query: { search: resume.name } })
 }
 
 const handleSearch = () => {
@@ -248,23 +300,10 @@ const downloadResume = async (resume: Resume) => {
   }
 }
 
-// ─── 删除（带确认） ───
+// ─── 删除（带撤销） ───
 
-const deleteResume = async (resume: Resume) => {
-  try {
-    await ElMessageBox.confirm(
-      `确定要删除简历「${resume.name}」吗？此操作不可恢复。`,
-      '删除确认',
-      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
-    )
-    await api.delete(`/resumes/${resume.id}`)
-    ElMessage.success('删除成功')
-    fetchResumes()
-  } catch (e: any) {
-    if (e !== 'cancel') {
-      ElMessage.error(extractErrorMessage(e, '删除失败'))
-    }
-  }
+const deleteResume = (resume: Resume) => {
+  requestDeleteResume(resume)
 }
 
 // ─── 批量删除 ───
@@ -288,10 +327,10 @@ const toggleSelect = (id: number) => {
 const isSelected = (id: number) => selectedIds.value.includes(id)
 
 const selectAll = () => {
-  if (selectedIds.value.length === resumes.value.length) {
+  if (selectedIds.value.length === displayedResumes.value.length) {
     selectedIds.value = []
   } else {
-    selectedIds.value = resumes.value.map(r => r.id)
+    selectedIds.value = displayedResumes.value.map(r => r.id)
   }
 }
 
@@ -344,19 +383,15 @@ const batchDelete = async () => {
 // ─── 重新OCR ───
 
 const reOcr = async (resume: Resume) => {
+  retryingIds.value.add(resume.id)
   try {
-    await ElMessageBox.confirm(
-      `确定要重新对「${resume.name}」进行OCR识别吗？`,
-      '重新OCR',
-      { confirmButtonText: '确定', cancelButtonText: '取消', type: 'info' }
-    )
     await api.post(`/resumes/${resume.id}/re-ocr`)
     ElMessage.success('已重新触发OCR')
     fetchResumes()
   } catch (e: any) {
-    if (e !== 'cancel') {
-      ElMessage.error(extractErrorMessage(e, '重新OCR失败'))
-    }
+    ElMessage.error(extractErrorMessage(e, '重新OCR失败'))
+  } finally {
+    retryingIds.value.delete(resume.id)
   }
 }
 
@@ -438,7 +473,10 @@ const fileTypeIcon = (type: string) => {
   return '🖼️'
 }
 
-onMounted(fetchResumes)
+onMounted(() => {
+  fetchResumes()
+  fetchDeliveries()
+})
 onUnmounted(() => {
   stopPolling()
   if (searchTimer) clearTimeout(searchTimer)
@@ -498,7 +536,7 @@ onUnmounted(() => {
       <el-button
         v-if="selectMode"
         @click="selectAll"
-      >{{ selectedIds.length === resumes.length ? '取消全选' : '全选' }}</el-button>
+      >{{ selectedIds.length === displayedResumes.length ? '取消全选' : '全选' }}</el-button>
       <el-button type="primary" :icon="Plus" @click="uploadDialog = true">上传简历</el-button>
     </PageHeader>
 
@@ -508,7 +546,7 @@ onUnmounted(() => {
 
     <div v-loading="loading" class="resume-list">
       <el-card
-        v-for="resume in resumes"
+        v-for="resume in displayedResumes"
         :key="resume.id"
         class="resume-card"
         :class="{ 'card-selected': isSelected(resume.id) }"
@@ -529,6 +567,18 @@ onUnmounted(() => {
               <span class="file-size">{{ formatFileSize(resume.file_size) }}</span>
               <span class="file-ext">{{ resume.file_type?.replace('.', '').toUpperCase() }}</span>
             </div>
+            <div class="resume-delivery-link">
+              <el-tag
+                v-if="deliveryCountMap[resume.id]"
+                size="small"
+                type="info"
+                class="delivery-count-tag"
+                @click.stop="goToDeliveries(resume)"
+              >
+                已用于 {{ deliveryCountMap[resume.id] }} 个投递
+              </el-tag>
+              <span v-else class="no-delivery">未用于投递</span>
+            </div>
           </div>
         </div>
 
@@ -538,12 +588,24 @@ onUnmounted(() => {
               {{ ocrStatusLabel(resume.ocr_status) }}
             </el-tag>
             <span v-if="resume.ocr_status === 'processing'" class="ocr-percent">{{ resume.ocr_progress }}%</span>
+            <span v-if="resume.ocr_status === 'pending'" class="ocr-percent">排队中</span>
+            <el-button
+              v-if="resume.ocr_status === 'failed'"
+              type="danger"
+              link
+              size="small"
+              :icon="RefreshRight"
+              :loading="retryingIds.has(resume.id)"
+              @click.stop="reOcr(resume)"
+            >重试 OCR</el-button>
           </div>
           <el-progress
             v-if="resume.ocr_status === 'processing' || resume.ocr_status === 'pending'"
             :percentage="resume.ocr_progress"
             :stroke-width="6"
             :show-text="false"
+            :indeterminate="resume.ocr_status === 'pending'"
+            :duration="2"
             style="margin-top: 6px"
           />
         </div>
@@ -557,7 +619,7 @@ onUnmounted(() => {
           <el-button text :icon="Download" @click="downloadResume(resume)">下载</el-button>
           <el-button text :icon="Edit" @click="openEdit(resume)">编辑</el-button>
           <el-button
-            v-if="resume.ocr_status === 'done' || resume.ocr_status === 'failed'"
+            v-if="resume.ocr_status === 'done'"
             text
             :icon="RefreshRight"
             @click="reOcr(resume)"
@@ -570,7 +632,7 @@ onUnmounted(() => {
           <el-button type="danger" text :icon="Delete" @click="deleteResume(resume)">删除</el-button>
         </div>
       </el-card>
-      <el-empty v-if="!loading && resumes.length === 0" description="还没有上传简历">
+      <el-empty v-if="!loading && displayedResumes.length === 0" description="还没有上传简历">
         <el-button type="primary" :icon="Plus" @click="uploadDialog = true">上传简历</el-button>
       </el-empty>
     </div>
@@ -747,6 +809,23 @@ onUnmounted(() => {
   font-size: 11px;
   font-weight: 500;
   color: #475569;
+}
+
+.resume-delivery-link {
+  margin-top: 6px;
+}
+
+.delivery-count-tag {
+  cursor: pointer;
+}
+
+.delivery-count-tag:hover {
+  background: #e2e8f0;
+}
+
+.no-delivery {
+  font-size: 12px;
+  color: #94a3b8;
 }
 
 .ocr-status-area {

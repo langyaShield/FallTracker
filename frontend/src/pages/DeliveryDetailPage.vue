@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, ArrowRight, Plus, Edit, Delete, ChatDotRound, Document, Timer, View } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, Plus, Edit, Delete, ChatDotRound, Document, Timer, View, CopyDocument, CirclePlus, Memo } from '@element-plus/icons-vue'
 import api from '@/lib/api'
 import { STATUS_COLUMNS, EVENT_TYPE_OPTIONS, EVENT_TYPE_LABEL_MAP } from '@/lib/constants'
 import { formatDateTime } from '@/lib/format'
 import { extractErrorMessage } from '@/lib/error'
+import PageHeader from '@/components/PageHeader.vue'
 
 /** 轻量级 Markdown 渲染器（XSS 安全） */
 function renderMarkdown(text: string): string {
@@ -64,7 +65,6 @@ function renderMarkdown(text: string): string {
   return html
 }
 
-const jdPreviewMode = ref(false)
 const renderedJd = computed(() => {
   if (!delivery.value?.jd_text) return '<p style="color:#94a3b8">暂无JD描述</p>'
   return renderMarkdown(delivery.value.jd_text)
@@ -114,6 +114,73 @@ const editingEvent = ref<Partial<InterviewEvent>>({})
 
 const statusOptions = STATUS_COLUMNS.map((s) => ({ label: s.label, value: s.key }))
 
+// JD 默认展开预览，减少一次点击
+const jdPreviewMode = ref(true)
+
+// 状态下拉自动保存（防抖 600ms）
+let statusSaveTimer: ReturnType<typeof setTimeout> | null = null
+watch(
+  () => delivery.value?.status,
+  (newVal, oldVal) => {
+    if (newVal === undefined || oldVal === undefined || newVal === oldVal) return
+    if (statusSaveTimer) clearTimeout(statusSaveTimer)
+    statusSaveTimer = setTimeout(() => {
+      saveDelivery(false)
+    }, 600)
+  }
+)
+
+const copyJd = async () => {
+  const text = delivery.value?.jd_text || ''
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success('JD 已复制到剪贴板')
+  } catch {
+    // fallback
+    const textarea = document.createElement('textarea')
+    textarea.value = text
+    document.body.appendChild(textarea)
+    textarea.select()
+    document.execCommand('copy')
+    document.body.removeChild(textarea)
+    ElMessage.success('JD 已复制到剪贴板')
+  }
+}
+
+// 时间线内联编辑
+const inlineEditingEventId = ref<number | null>(null)
+const inlineEventForm = ref<Partial<InterviewEvent>>({})
+
+const startInlineEdit = (event: InterviewEvent) => {
+  inlineEditingEventId.value = event.id
+  inlineEventForm.value = { ...event, scheduled_at: event.scheduled_at.slice(0, 16) }
+}
+
+const cancelInlineEdit = () => {
+  inlineEditingEventId.value = null
+  inlineEventForm.value = {}
+}
+
+const saveInlineEvent = async () => {
+  try {
+    await api.put(`/events/${inlineEventForm.value.id}`, inlineEventForm.value)
+    ElMessage.success('更新成功')
+    inlineEditingEventId.value = null
+    fetchEvents()
+  } catch (e: unknown) {
+    ElMessage.error(extractErrorMessage(e, '更新失败'))
+  }
+}
+
+// 右下角 FAB
+const fabOpen = ref(false)
+const fabActions = [
+  { label: '添加事件', icon: CirclePlus, action: () => openEventDialog() },
+  { label: '写复盘', icon: Memo, action: () => router.push('/reviews') },
+  { label: '编辑投递', icon: Edit, action: () => window.scrollTo({ top: 0, behavior: 'smooth' }) },
+]
+
 const fetchDetail = async () => {
   loading.value = true
   try {
@@ -157,11 +224,11 @@ const fetchTagSuggestions = async () => {
   }
 }
 
-const saveDelivery = async () => {
+const saveDelivery = async (showToast = true) => {
   if (!delivery.value) return
   try {
     await api.put(`/deliveries/${delivery.value.id}`, delivery.value)
-    ElMessage.success('保存成功')
+    if (showToast) ElMessage.success('保存成功')
   } catch (e: unknown) {
     ElMessage.error(extractErrorMessage(e, '保存失败'))
   }
@@ -218,11 +285,17 @@ onMounted(() => {
 
 <template>
   <div v-loading="loading" class="detail-page">
-    <div class="detail-header">
-      <el-button text :icon="ArrowLeft" @click="router.back()">返回</el-button>
-      <h2>{{ delivery?.company }} - {{ delivery?.position }}</h2>
+    <PageHeader
+      :title="`${delivery?.company || ''} - ${delivery?.position || ''}`"
+      subtitle="投递详情"
+      :show-back="true"
+      :breadcrumbs="[
+        { label: '投递大盘', path: '/dashboard' },
+        { label: `${delivery?.company || ''} - ${delivery?.position || ''}` },
+      ]"
+    >
       <span v-if="delivery?.created_at" class="detail-time">创建于 {{ formatDateTime(delivery.created_at) }}</span>
-    </div>
+    </PageHeader>
 
     <div class="detail-body" :class="{ 'right-collapsed': rightPanelCollapsed }">
       <div class="detail-left">
@@ -247,6 +320,7 @@ onMounted(() => {
               <el-select v-model="delivery!.status" style="width: 100%">
                 <el-option v-for="s in statusOptions" :key="s.value" :label="s.label" :value="s.value" />
               </el-select>
+              <span class="auto-save-hint">切换后自动保存</span>
             </el-form-item>
             <el-form-item label="标签">
               <el-select-v2
@@ -278,6 +352,12 @@ onMounted(() => {
                     :icon="View"
                     @click="jdPreviewMode = true"
                   >预览</el-button>
+                  <el-button
+                    size="small"
+                    text
+                    :icon="CopyDocument"
+                    @click="copyJd"
+                  >复制 JD</el-button>
                 </div>
                 <el-input v-if="!jdPreviewMode" v-model="delivery!.jd_text" type="textarea" :rows="4" />
                 <div v-else class="md-preview" v-html="renderedJd" />
@@ -321,11 +401,51 @@ onMounted(() => {
               :type="evt.event_type === 'interview' ? 'primary' : evt.event_type === 'written' ? 'warning' : 'info'"
               :icon="evt.event_type === 'interview' ? ChatDotRound : evt.event_type === 'written' ? Document : Timer"
             >
-              <div class="event-item">
+              <div v-if="inlineEditingEventId === evt.id" class="event-inline-form">
+                <el-form label-width="70px" size="small">
+                  <el-form-item label="类型">
+                    <el-select v-model="inlineEventForm.event_type" style="width: 100%">
+                      <el-option v-for="o in EVENT_TYPE_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
+                    </el-select>
+                  </el-form-item>
+                  <el-form-item label="轮次">
+                    <el-input-number v-model="inlineEventForm.round_number" :min="1" style="width: 100%" />
+                  </el-form-item>
+                  <el-form-item label="时间">
+                    <el-date-picker
+                      v-model="inlineEventForm.scheduled_at"
+                      type="datetime"
+                      placeholder="选择日期时间"
+                      style="width: 100%"
+                      value-format="YYYY-MM-DDTHH:mm"
+                    />
+                  </el-form-item>
+                  <el-form-item label="时长">
+                    <el-input-number v-model="inlineEventForm.duration_minutes" :min="15" :step="15" style="width: 100%" />
+                  </el-form-item>
+                  <el-form-item label="地点">
+                    <el-input v-model="inlineEventForm.location" placeholder="面试地点" />
+                  </el-form-item>
+                  <el-form-item label="会议">
+                    <el-input v-model="inlineEventForm.meeting_link" placeholder="腾讯会议/Zoom链接" />
+                  </el-form-item>
+                  <el-form-item label="面试官">
+                    <el-input v-model="inlineEventForm.interviewer" placeholder="面试官姓名" />
+                  </el-form-item>
+                  <el-form-item label="备注">
+                    <el-input v-model="inlineEventForm.notes" type="textarea" :rows="2" placeholder="备注信息" />
+                  </el-form-item>
+                  <el-form-item>
+                    <el-button type="primary" size="small" @click="saveInlineEvent">保存</el-button>
+                    <el-button size="small" @click="cancelInlineEdit">取消</el-button>
+                  </el-form-item>
+                </el-form>
+              </div>
+              <div v-else class="event-item">
                 <div class="event-header">
                   <span class="event-type">{{ EVENT_TYPE_LABEL_MAP[evt.event_type] || evt.event_type }}</span>
                   <span class="event-round">第{{ evt.round_number }}轮</span>
-                  <el-button text size="small" :icon="Edit" @click="openEventDialog(evt)" />
+                  <el-button text size="small" :icon="Edit" @click="startInlineEdit(evt)" />
                   <el-button text size="small" type="danger" :icon="Delete" @click="deleteEvent(evt.id)" />
                 </div>
                 <div class="event-time">{{ formatDateTime(evt.scheduled_at) }} · {{ evt.duration_minutes }}分钟</div>
@@ -341,6 +461,31 @@ onMounted(() => {
           <el-empty v-if="events.length === 0" description="暂无事件" />
         </el-card>
       </div>
+    </div>
+
+    <!-- 右下角 FAB -->
+    <div class="fab-container">
+      <el-button
+        class="fab-main"
+        type="primary"
+        circle
+        size="large"
+        :icon="Plus"
+        @click="fabOpen = !fabOpen"
+      />
+      <transition name="fab-slide">
+        <div v-if="fabOpen" class="fab-menu">
+          <div
+            v-for="(item, index) in fabActions"
+            :key="index"
+            class="fab-item"
+            @click="item.action(); fabOpen = false"
+          >
+            <span class="fab-label">{{ item.label }}</span>
+            <el-button circle size="small" :icon="item.icon" />
+          </div>
+        </div>
+      </transition>
     </div>
 
     <el-dialog v-model="eventDialog" :title="editingEvent.id ? '编辑事件' : '添加事件'" width="500px">
@@ -515,6 +660,20 @@ onMounted(() => {
   color: #475569;
 }
 
+.event-inline-form {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px;
+  margin: 4px 0 8px;
+}
+
+.auto-save-hint {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-top: 4px;
+}
+
 /* JD Markdown preview */
 .jd-field {
   width: 100%;
@@ -598,6 +757,59 @@ onMounted(() => {
   font-size: 12px;
 }
 
+.fab-container {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.fab-main {
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
+  width: 52px;
+  height: 52px;
+  font-size: 22px;
+}
+
+.fab-menu {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.fab-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.fab-label {
+  font-size: 13px;
+  color: #475569;
+  background: #fff;
+  padding: 4px 10px;
+  border-radius: 4px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
+.fab-slide-enter-active,
+.fab-slide-leave-active {
+  transition: all 0.2s ease;
+}
+
+.fab-slide-enter-from,
+.fab-slide-leave-to {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
 @media (max-width: 768px) {
   .detail-body {
     grid-template-columns: 1fr !important;
@@ -610,6 +822,11 @@ onMounted(() => {
 
   .detail-right {
     opacity: 1 !important;
+  }
+
+  .fab-container {
+    bottom: 16px;
+    right: 16px;
   }
 }
 </style>

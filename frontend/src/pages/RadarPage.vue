@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ref, computed, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import { Plus, VideoPlay, VideoPause, Edit, Delete, CaretRight } from '@element-plus/icons-vue'
 import api from '@/lib/api'
 import { formatLocaleDateTime } from '@/lib/format'
+import { STATUS_COLUMNS } from '@/lib/constants'
+import { useUndoDelete } from '@/composables/useUndoDelete'
 import { extractErrorMessage } from '@/lib/error'
 import PageHeader from '@/components/PageHeader.vue'
 import RadarEmailSettings from '@/components/radar/RadarEmailSettings.vue'
@@ -75,6 +77,18 @@ async function fetchTemplates() {
 // ========== Configs Tab ==========
 const configs = ref<CrawlerConfig[]>([])
 const configsLoading = ref(false)
+
+// 删除撤销
+const { pendingIds: deletingConfigIds, requestDelete: requestDeleteConfig } = useUndoDelete<CrawlerConfig>({
+  getId: (c) => c.id,
+  getName: (c) => c.name,
+  deleteFn: async (c) => {
+    await api.delete(`/radar/configs/${c.id}`)
+  },
+  onSuccess: () => fetchConfigs(),
+})
+
+const displayedConfigs = computed(() => configs.value.filter((c) => !deletingConfigIds.value.has(c.id)))
 
 // 创建向导
 const wizardVisible = ref(false)
@@ -201,7 +215,7 @@ function openEditDialog(config: CrawlerConfig) {
   editDialogVisible.value = true
 }
 
-async function saveEdit() {
+async function saveEdit(runAfter = false) {
   if (!editForm.value.name || !editForm.value.url) {
     ElMessage.warning('请填写名称和目标网址')
     return
@@ -209,9 +223,12 @@ async function saveEdit() {
   editSaving.value = true
   try {
     await api.put(`/radar/configs/${editingConfig.value!.id}`, editForm.value)
-    ElMessage.success('配置已更新')
+    ElMessage.success(runAfter ? '配置已更新，正在运行测试检查' : '配置已更新')
     editDialogVisible.value = false
     await fetchConfigs()
+    if (runAfter && editingConfig.value) {
+      runNow(editingConfig.value)
+    }
   } catch (e: any) {
     ElMessage.error(extractErrorMessage(e, '保存失败'))
   } finally {
@@ -221,15 +238,8 @@ async function saveEdit() {
 
 // ─── 操作 ───
 
-async function deleteConfig(config: CrawlerConfig) {
-  try {
-    await ElMessageBox.confirm(`确定删除「${config.name}」？运行记录也将被删除。`, '确认删除', {
-      confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning',
-    })
-    await api.delete(`/radar/configs/${config.id}`)
-    ElMessage.success('已删除')
-    await fetchConfigs()
-  } catch { /* cancelled */ }
+function deleteConfig(config: CrawlerConfig) {
+  requestDeleteConfig(config)
 }
 
 async function runNow(config: CrawlerConfig) {
@@ -271,6 +281,69 @@ const results = ref<CrawlerResult[]>([])
 const resultsLoading = ref(false)
 const resultDetailVisible = ref(false)
 const selectedResult = ref<CrawlerResult | null>(null)
+
+// ========== Quick Delivery ==========
+interface QuickDeliveryForm {
+  company: string
+  position: string
+  city: string
+  link: string
+  jd_text: string
+  status: string
+  tags: string[]
+}
+
+const quickDeliveryVisible = ref(false)
+const quickDeliveryLoading = ref(false)
+const quickDeliveryForm = ref<QuickDeliveryForm>({
+  company: '',
+  position: '',
+  city: '',
+  link: '',
+  jd_text: '',
+  status: 'pending',
+  tags: [],
+})
+
+function openQuickDelivery(item: MatchedItem) {
+  quickDeliveryForm.value = {
+    company: item.company || '',
+    position: item.position || '',
+    city: item.location || '',
+    link: item.link || '',
+    jd_text: item.match_reason ? `匹配原因：${item.match_reason}` : '',
+    status: 'pending',
+    tags: item.tags ? [...item.tags] : [],
+  }
+  quickDeliveryVisible.value = true
+}
+
+async function saveQuickDelivery() {
+  if (!quickDeliveryForm.value.company || !quickDeliveryForm.value.position) {
+    ElMessage.warning('请填写公司和岗位')
+    return
+  }
+  quickDeliveryLoading.value = true
+  try {
+    const city = quickDeliveryForm.value.city.trim()
+    const note = quickDeliveryForm.value.jd_text.trim()
+    const jdText = city ? `城市：${city}\n\n${note}` : note
+    await api.post('/deliveries', {
+      company: quickDeliveryForm.value.company,
+      position: quickDeliveryForm.value.position,
+      status: quickDeliveryForm.value.status,
+      link: quickDeliveryForm.value.link || undefined,
+      jd_text: jdText || undefined,
+      tags: quickDeliveryForm.value.tags,
+    })
+    ElMessage.success('已创建投递')
+    quickDeliveryVisible.value = false
+  } catch (e: any) {
+    ElMessage.error(extractErrorMessage(e, '创建投递失败'))
+  } finally {
+    quickDeliveryLoading.value = false
+  }
+}
 
 async function onConfigSelect() {
   if (!selectedConfigId.value) {
@@ -357,7 +430,7 @@ onMounted(() => {
           </div>
 
           <div v-loading="configsLoading" class="config-list">
-            <el-card v-for="config in configs" :key="config.id" class="config-card">
+            <el-card v-for="config in displayedConfigs" :key="config.id" class="config-card">
               <div class="config-header">
                 <div class="config-info">
                   <span class="config-name">{{ config.name }}</span>
@@ -400,7 +473,7 @@ onMounted(() => {
                 </div>
               </div>
             </el-card>
-            <el-empty v-if="!configsLoading && configs.length === 0" description="暂无监控，点击上方模板快速创建" />
+            <el-empty v-if="!configsLoading && displayedConfigs.length === 0" description="暂无监控，点击上方模板快速创建" />
           </div>
         </div>
 
@@ -548,7 +621,8 @@ onMounted(() => {
           </el-form>
           <template #footer>
             <el-button @click="editDialogVisible = false">取消</el-button>
-            <el-button type="primary" :loading="editSaving" @click="saveEdit">保存</el-button>
+            <el-button type="primary" :loading="editSaving" @click="saveEdit(false)">保存</el-button>
+            <el-button :loading="editSaving" @click="saveEdit(true)">保存并运行</el-button>
           </template>
         </el-dialog>
       </el-tab-pane>
@@ -628,6 +702,11 @@ onMounted(() => {
                     <span v-else>-</span>
                   </template>
                 </el-table-column>
+                <el-table-column label="操作" width="100">
+                  <template #default="{ row }">
+                    <el-button type="primary" size="small" :icon="Plus" @click="openQuickDelivery(row)">快速投递</el-button>
+                  </template>
+                </el-table-column>
               </el-table>
             </div>
             <div class="detail-section">
@@ -641,6 +720,47 @@ onMounted(() => {
               <h4>抓取内容 <el-tag size="small" style="margin-left: 8px">{{ selectedResult.raw_text.length }} 字符</el-tag></h4>
               <pre class="raw-text">{{ selectedResult.raw_text }}</pre>
             </div>
+          </template>
+        </el-dialog>
+
+        <!-- Quick Delivery Dialog -->
+        <el-dialog v-model="quickDeliveryVisible" title="快速投递" width="520px">
+          <el-form label-width="80px">
+            <el-form-item label="公司" required>
+              <el-input v-model="quickDeliveryForm.company" placeholder="公司名称" />
+            </el-form-item>
+            <el-form-item label="岗位" required>
+              <el-input v-model="quickDeliveryForm.position" placeholder="岗位名称" />
+            </el-form-item>
+            <el-form-item label="城市">
+              <el-input v-model="quickDeliveryForm.city" placeholder="工作城市" />
+            </el-form-item>
+            <el-form-item label="状态">
+              <el-select v-model="quickDeliveryForm.status" placeholder="选择状态" style="width: 100%">
+                <el-option v-for="s in STATUS_COLUMNS" :key="s.key" :label="s.label" :value="s.key" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="JD链接">
+              <el-input v-model="quickDeliveryForm.link" placeholder="招聘链接" />
+            </el-form-item>
+            <el-form-item label="标签">
+              <el-select-v2
+                v-model="quickDeliveryForm.tags"
+                :options="[]"
+                placeholder="输入标签按回车"
+                allow-create
+                multiple
+                filterable
+                style="width: 100%"
+              />
+            </el-form-item>
+            <el-form-item label="备注">
+              <el-input v-model="quickDeliveryForm.jd_text" type="textarea" :rows="3" placeholder="岗位描述或匹配原因" />
+            </el-form-item>
+          </el-form>
+          <template #footer>
+            <el-button @click="quickDeliveryVisible = false">取消</el-button>
+            <el-button type="primary" :loading="quickDeliveryLoading" @click="saveQuickDelivery">保存投递</el-button>
           </template>
         </el-dialog>
       </el-tab-pane>

@@ -7,7 +7,7 @@ import api from '@/lib/api'
 import { STATUS_LABEL_MAP, STATUS_COLOR_MAP, EVENT_TYPE_LABEL_MAP, EVENT_TYPE_COLOR_MAP } from '@/lib/constants'
 import { formatShortDateTime } from '@/lib/format'
 import { extractErrorMessage } from '@/lib/error'
-import { TrendCharts, Calendar, Document, EditPen } from '@element-plus/icons-vue'
+import { TrendCharts, Calendar, Document, EditPen, Plus, Upload, Clock } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const authStore = useAuthStore()
@@ -15,11 +15,25 @@ const authStore = useAuthStore()
 const stats = ref<Record<string, number>>({})
 const upcomingEvents = ref<any[]>([])
 const urgentDeadlines = ref<any[]>([])
+const todayDeliveries = ref<any[]>([])
 const loading = ref(false)
 
 const total = computed(() => Object.values(stats.value).reduce((a, b) => a + b, 0))
 const offerCount = computed(() => stats.value.offer || 0)
 const interviewCount = computed(() => stats.value.interview || 0)
+
+const isToday = (dateStr: string) => {
+  if (!dateStr) return false
+  const d = new Date(dateStr)
+  const now = new Date()
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  )
+}
+
+const todayNewCount = computed(() => todayDeliveries.value.filter((d) => isToday(d.created_at)).length)
 
 const fetchStats = async () => {
   loading.value = true
@@ -115,11 +129,21 @@ const fetchNextInterview = async () => {
   }
 }
 
+const fetchTodayDeliveries = async () => {
+  try {
+    const res = await api.get('/deliveries', { params: { limit: 100, sort_by: 'created_at', sort_order: 'desc' } })
+    todayDeliveries.value = res.data || []
+  } catch {
+    // non-critical
+  }
+}
+
 onMounted(() => {
   fetchStats()
   fetchUpcoming()
   fetchUrgentDeadlines()
   fetchNextInterview()
+  fetchTodayDeliveries()
   countdownTimer = setInterval(updateCountdown, 60_000)
 })
 
@@ -131,14 +155,14 @@ onUnmounted(() => {
 <template>
   <div class="home-page" v-loading="loading">
     <div class="welcome-section">
-      <h1>欢迎回来，{{ authStore.user?.username || '用户' }}</h1>
-      <p>这是你的秋招进展概览</p>
+      <h1>今日工作台</h1>
+      <p>聚焦今天的求职任务，快速推进关键事项</p>
     </div>
 
     <div class="kpi-row">
       <el-card class="kpi-card">
-        <div class="kpi-value" style="color: #1e3a5f">{{ total }}</div>
-        <div class="kpi-label">投递总数</div>
+        <div class="kpi-value" style="color: #1e3a5f">{{ todayNewCount }}</div>
+        <div class="kpi-label">今日新增投递</div>
       </el-card>
       <el-card class="kpi-card">
         <div class="kpi-value" style="color: #f59e0b">{{ interviewCount }}</div>
@@ -148,6 +172,16 @@ onUnmounted(() => {
         <div class="kpi-value" style="color: #10b981">{{ offerCount }}</div>
         <div class="kpi-label">已Offer</div>
       </el-card>
+    </div>
+
+    <div class="quick-actions">
+      <el-button type="primary" size="large" :icon="Plus" @click="router.push('/dashboard')">新增投递</el-button>
+      <el-button size="large" :icon="Clock" @click="router.push('/calendar')">新增事件</el-button>
+      <el-button size="large" :icon="Upload" @click="router.push('/resumes')">上传简历</el-button>
+      <el-button size="large" :icon="TrendCharts" @click="router.push('/dashboard')">投递大盘</el-button>
+      <el-button size="large" :icon="Calendar" @click="router.push('/calendar')">日历视图</el-button>
+      <el-button size="large" :icon="EditPen" @click="router.push('/reviews')">面试复盘</el-button>
+      <el-button size="large" :icon="Document" @click="router.push('/resumes')">简历管理</el-button>
     </div>
 
     <!-- 下一场面试倒计时 -->
@@ -248,12 +282,6 @@ onUnmounted(() => {
       </el-card>
     </div>
 
-    <div class="quick-actions">
-      <el-button type="primary" size="large" :icon="TrendCharts" @click="router.push('/dashboard')">投递大盘</el-button>
-      <el-button size="large" :icon="Calendar" @click="router.push('/calendar')">日历视图</el-button>
-      <el-button size="large" :icon="EditPen" @click="router.push('/reviews')">面试复盘</el-button>
-      <el-button size="large" :icon="Document" @click="router.push('/resumes')">简历管理</el-button>
-    </div>
   </div>
 </template>
 

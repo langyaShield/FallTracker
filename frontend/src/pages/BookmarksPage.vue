@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Link, Edit, Delete } from '@element-plus/icons-vue'
+import { Plus, Link, Edit, Delete, Search, FolderOpened } from '@element-plus/icons-vue'
 import api from '@/lib/api'
+import { useUndoDelete } from '@/composables/useUndoDelete'
 import { extractErrorMessage } from '@/lib/error'
 
 interface BookmarkItem {
@@ -19,6 +20,8 @@ const bookmarks = ref<BookmarkItem[]>([])
 const loading = ref(false)
 const dialogVisible = ref(false)
 const editingBookmark = ref<BookmarkItem | null>(null)
+const searchQuery = ref('')
+const selectedCategory = ref('')
 
 const form = ref({
   title: '',
@@ -28,14 +31,38 @@ const form = ref({
   sort_order: 0,
 })
 
+// 删除撤销
+const { pendingIds: deletingBookmarkIds, requestDelete: requestDeleteBookmark } = useUndoDelete<BookmarkItem>({
+  getId: (b) => b.id,
+  getName: (b) => b.title,
+  deleteFn: async (b) => {
+    await api.delete(`/bookmarks/${b.id}`)
+  },
+  onSuccess: () => fetchBookmarks(),
+})
+
 const categories = computed(() => {
   const cats = new Set(bookmarks.value.map(b => b.category).filter(c => c))
-  return ['', ...Array.from(cats).sort()]
+  return Array.from(cats).sort()
+})
+
+const filteredBookmarks = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  return bookmarks.value.filter((b) => {
+    if (deletingBookmarkIds.value.has(b.id)) return false
+    const matchesSearch =
+      !q ||
+      b.title.toLowerCase().includes(q) ||
+      b.url.toLowerCase().includes(q) ||
+      (b.category && b.category.toLowerCase().includes(q))
+    const matchesCategory = !selectedCategory.value || b.category === selectedCategory.value
+    return matchesSearch && matchesCategory
+  })
 })
 
 const groupedBookmarks = computed(() => {
   const groups: Record<string, BookmarkItem[]> = {}
-  for (const b of bookmarks.value) {
+  for (const b of filteredBookmarks.value) {
     const cat = b.category || '未分类'
     if (!groups[cat]) groups[cat] = []
     groups[cat].push(b)
@@ -102,27 +129,28 @@ const submitForm = async () => {
   }
 }
 
-const deleteBookmark = async (bookmark: BookmarkItem) => {
-  try {
-    await ElMessageBox.confirm(
-      `确定要删除书签"${bookmark.title}"吗？`,
-      '删除确认',
-      { confirmButtonText: '确定', cancelButtonText: '取消', type: 'warning' },
-    )
-  } catch {
-    return
-  }
-  try {
-    await api.delete(`/bookmarks/${bookmark.id}`)
-    ElMessage.success('已删除')
-    fetchBookmarks()
-  } catch (e: unknown) {
-    ElMessage.error(extractErrorMessage(e, '删除失败'))
-  }
+const deleteBookmark = (bookmark: BookmarkItem) => {
+  requestDeleteBookmark(bookmark)
 }
 
 const openLink = (url: string) => {
   window.open(url, '_blank', 'noopener,noreferrer')
+}
+
+const openAllInCategory = async (items: BookmarkItem[]) => {
+  if (items.length === 0) return
+  try {
+    await ElMessageBox.confirm(
+      `即将打开 ${items.length} 个链接，浏览器可能会拦截弹窗，请允许后继续。`,
+      '批量打开确认',
+      { confirmButtonText: '打开全部', cancelButtonText: '取消', type: 'info' }
+    )
+  } catch {
+    return
+  }
+  items.forEach((item, index) => {
+    setTimeout(() => openLink(item.url), index * 150)
+  })
 }
 
 const getDomain = (url: string): string => {
@@ -151,17 +179,35 @@ onMounted(() => {
   <div class="bookmarks-page" v-loading="loading">
     <div class="page-header">
       <h2>常用网站</h2>
-      <el-button type="primary" :icon="Plus" @click="openAddDialog">添加书签</el-button>
+      <div class="header-actions">
+        <el-input
+          v-model="searchQuery"
+          placeholder="搜索书签..."
+          :prefix-icon="Search"
+          clearable
+          class="bookmark-search"
+        />
+        <el-select v-model="selectedCategory" placeholder="全部分类" clearable class="bookmark-category-select">
+          <el-option v-for="cat in categories" :key="cat" :label="cat" :value="cat" />
+        </el-select>
+        <el-button type="primary" :icon="Plus" @click="openAddDialog">添加书签</el-button>
+      </div>
     </div>
 
-    <div v-if="bookmarks.length === 0 && !loading" class="empty-state">
-      <el-empty description="还没有添加任何书签">
-        <el-button type="primary" @click="openAddDialog">添加第一个书签</el-button>
+    <div v-if="filteredBookmarks.length === 0 && !loading" class="empty-state">
+      <el-empty :description="bookmarks.length === 0 ? '还没有添加任何书签' : '没有匹配的书签'">
+        <el-button v-if="bookmarks.length === 0" type="primary" @click="openAddDialog">添加第一个书签</el-button>
+        <el-button v-else @click="searchQuery = ''; selectedCategory = ''">清除筛选</el-button>
       </el-empty>
     </div>
 
     <div v-for="(items, category) in groupedBookmarks" :key="category" class="bookmark-group">
-      <h3 class="group-title">{{ category }}</h3>
+      <div class="group-header">
+        <h3 class="group-title">{{ category }}</h3>
+        <el-button text size="small" :icon="FolderOpened" @click="openAllInCategory(items)">
+          打开全部 ({{ items.length }})
+        </el-button>
+      </div>
       <div class="bookmark-grid">
         <div
           v-for="bookmark in items"
@@ -239,6 +285,8 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .page-header h2 {
@@ -246,6 +294,21 @@ onMounted(() => {
   font-weight: 700;
   color: #1e3a5f;
   margin: 0;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.bookmark-search {
+  width: 200px;
+}
+
+.bookmark-category-select {
+  width: 140px;
 }
 
 .empty-state {
@@ -256,13 +319,20 @@ onMounted(() => {
   margin-bottom: 32px;
 }
 
+.group-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 2px solid #e2e8f0;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+}
+
 .group-title {
   font-size: 16px;
   font-weight: 600;
   color: #334155;
-  margin: 0 0 16px 0;
-  padding-bottom: 8px;
-  border-bottom: 2px solid #e2e8f0;
+  margin: 0;
 }
 
 .bookmark-grid {

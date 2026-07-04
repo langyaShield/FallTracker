@@ -3,12 +3,15 @@ import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Download, Upload, Refresh, Delete, Check } from '@element-plus/icons-vue'
 import api from '@/lib/api'
+import { formatLocaleDateTime } from '@/lib/format'
 import { extractErrorMessage } from '@/lib/error'
 import PageHeader from '@/components/PageHeader.vue'
 
 const loading = ref(false)
 const saving = ref(false)
 const testingLlm = ref(false)
+const llmSavedAt = ref<string>('')
+const cosSavedAt = ref<string>('')
 
 const llmApiKey = ref('')
 const llmApiBase = ref('https://api.deepseek.com/v1')
@@ -42,6 +45,7 @@ const saveSettings = async () => {
       payload.llm_api_key = llmApiKey.value
     }
     await api.put('/settings', payload)
+    llmSavedAt.value = formatLocaleDateTime(new Date().toISOString())
     ElMessage.success('保存成功')
     fetchSettings()
   } catch (e: any) {
@@ -206,6 +210,7 @@ const saveCosSettings = async () => {
       payload.cos_secret_key = cosSecretKey.value
     }
     await api.put('/settings/cos', payload)
+    cosSavedAt.value = formatLocaleDateTime(new Date().toISOString())
     ElMessage.success('COS 配置保存成功')
     fetchCosSettings()
   } catch (e: any) {
@@ -415,6 +420,7 @@ onMounted(() => {
         <el-form-item>
           <el-button type="primary" :loading="saving" @click="saveSettings">保存配置</el-button>
           <el-button :loading="testingLlm" @click="testLLM">测试连接</el-button>
+          <span v-if="llmSavedAt" class="saved-at">最后保存：{{ llmSavedAt }}</span>
         </el-form-item>
       </el-form>
     </el-card>
@@ -540,6 +546,7 @@ onMounted(() => {
 
             <el-form-item>
               <el-button type="primary" :loading="cosSaving" @click="saveCosSettings">保存 COS 配置</el-button>
+              <span v-if="cosSavedAt" class="saved-at">最后保存：{{ cosSavedAt }}</span>
             </el-form-item>
           </el-form>
         </el-collapse-item>
@@ -677,6 +684,12 @@ onMounted(() => {
 <style scoped>
 .settings-page {
   height: 100%;
+}
+
+.saved-at {
+  margin-left: 12px;
+  font-size: 12px;
+  color: #64748b;
 }
 
 .settings-card {

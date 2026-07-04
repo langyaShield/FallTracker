@@ -2,10 +2,10 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, ArrowRight, Plus } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, Plus, Calendar } from '@element-plus/icons-vue'
 import api from '@/lib/api'
 import { EVENT_TYPE_LABEL_MAP, EVENT_TYPE_COLOR_MAP } from '@/lib/constants'
-import { formatDateTime } from '@/lib/format'
+import { formatDateTime, formatDate } from '@/lib/format'
 import { extractErrorMessage } from '@/lib/error'
 import PageHeader from '@/components/PageHeader.vue'
 
@@ -39,10 +39,36 @@ const calendarEvents = computed(() => {
   })
 })
 const currentDate = ref(new Date())
+const viewMode = ref<'month' | 'week'>('month')
 const loading = ref(false)
 const dialogVisible = ref(false)
-const editingEvent = ref<Partial<CalendarEvent> & { scheduled_at?: string; duration_minutes?: number; delivery_id?: number; event_type?: string }>({})
+const dialogMode = ref<'create' | 'edit'>('create')
+const editingEvent = ref<Partial<CalendarEvent> & { id?: number; scheduled_at?: string; duration_minutes?: number; delivery_id?: number; event_type?: string; round_number?: number; location?: string; meeting_link?: string; interviewer?: string; notes?: string }>({})
 const deliveries = ref<{ id: number; company: string; position: string }[]>([])
+
+const isCurrentMonth = computed(() => {
+  const now = new Date()
+  return currentDate.value.getFullYear() === now.getFullYear() && currentDate.value.getMonth() === now.getMonth()
+})
+
+const weekRange = computed(() => {
+  const start = new Date(currentDate.value)
+  start.setDate(start.getDate() - start.getDay())
+  const end = new Date(start)
+  end.setDate(end.getDate() + 6)
+  return { start, end }
+})
+
+const weekEvents = computed(() => {
+  const { start, end } = weekRange.value
+  end.setHours(23, 59, 59, 999)
+  return calendarEvents.value
+    .filter((e) => {
+      const es = new Date(e.start)
+      return es >= start && es <= end
+    })
+    .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime())
+})
 
 const fetchEvents = async () => {
   loading.value = true
@@ -150,9 +176,46 @@ const nextMonth = () => {
   currentDate.value = new Date(currentDate.value.getFullYear(), currentDate.value.getMonth() + 1, 1)
 }
 
-const openAdd = () => {
-  editingEvent.value = { scheduled_at: '', duration_minutes: 60 }
+const goToToday = () => {
+  currentDate.value = new Date()
+}
+
+const openAdd = (initialDate?: string) => {
+  dialogMode.value = 'create'
+  editingEvent.value = {
+    scheduled_at: initialDate || '',
+    duration_minutes: 60,
+    event_type: 'interview',
+  }
   dialogVisible.value = true
+}
+
+const openEdit = async (evt: CalendarEvent) => {
+  if (evt.extendedProps.event_type === 'deadline') {
+    // 截止日期是投递属性，跳转到投递详情编辑
+    router.push(`/delivery/${evt.extendedProps.delivery_id}`)
+    return
+  }
+  dialogMode.value = 'edit'
+  try {
+    const res = await api.get(`/events/${evt.id}`)
+    const data = res.data || {}
+    editingEvent.value = {
+      id: data.id,
+      delivery_id: data.delivery_id,
+      event_type: data.event_type || 'interview',
+      round_number: data.round_number || 1,
+      scheduled_at: data.scheduled_at ? data.scheduled_at.slice(0, 16) : '',
+      duration_minutes: data.duration_minutes || 60,
+      location: data.location || '',
+      meeting_link: data.meeting_link || '',
+      interviewer: data.interviewer || '',
+      notes: data.notes || '',
+    }
+    dialogVisible.value = true
+  } catch (e: unknown) {
+    ElMessage.error(extractErrorMessage(e, '获取事件详情失败'))
+  }
 }
 
 /** T1-3: 触发 iCal 文件下载 */
@@ -176,14 +239,23 @@ const exportIcs = async () => {
 
 const saveEvent = async () => {
   try {
-    await api.post(`/deliveries/${editingEvent.value.delivery_id}/events`, {
+    const payload = {
       event_type: editingEvent.value.event_type || 'interview',
-      round_number: 1,
+      round_number: editingEvent.value.round_number || 1,
       scheduled_at: editingEvent.value.scheduled_at,
       duration_minutes: editingEvent.value.duration_minutes || 60,
-      notes: editingEvent.value.title,
-    })
-    ElMessage.success('添加成功')
+      location: editingEvent.value.location || undefined,
+      meeting_link: editingEvent.value.meeting_link || undefined,
+      interviewer: editingEvent.value.interviewer || undefined,
+      notes: editingEvent.value.notes || undefined,
+    }
+    if (dialogMode.value === 'edit' && editingEvent.value.id) {
+      await api.put(`/events/${editingEvent.value.id}`, payload)
+      ElMessage.success('更新成功')
+    } else {
+      await api.post(`/deliveries/${editingEvent.value.delivery_id}/events`, payload)
+      ElMessage.success('添加成功')
+    }
     dialogVisible.value = false
     fetchEvents()
   } catch (e: unknown) {
@@ -210,6 +282,11 @@ onMounted(() => {
         <el-button :icon="ArrowLeft" @click="prevMonth" />
         <el-button>{{ currentDate.getFullYear() }}年{{ currentDate.getMonth() + 1 }}月</el-button>
         <el-button :icon="ArrowRight" @click="nextMonth" />
+      </el-button-group>
+      <el-button v-if="!isCurrentMonth" :icon="Calendar" @click="goToToday">今天</el-button>
+      <el-button-group>
+        <el-button :type="viewMode === 'month' ? 'primary' : 'default'" @click="viewMode = 'month'">月</el-button>
+        <el-button :type="viewMode === 'week' ? 'primary' : 'default'" @click="viewMode = 'week'">周</el-button>
       </el-button-group>
       <el-button type="primary" :icon="Plus" @click="openAdd">新建事件</el-button>
     </PageHeader>
@@ -251,13 +328,14 @@ onMounted(() => {
       <el-button type="primary" @click="openAdd">新建第一个事件</el-button>
     </el-empty>
 
-    <div v-else class="calendar-grid">
+    <div v-else-if="viewMode === 'month'" class="calendar-grid">
       <div class="weekday-header" v-for="day in ['日', '一', '二', '三', '四', '五', '六']" :key="day">{{ day }}</div>
       <div
         v-for="(day, idx) in calendarDays"
         :key="idx"
         class="calendar-day"
-        :class="{ 'other-month': !day }"
+        :class="{ 'other-month': !day, 'is-today': day === new Date().getDate() && isCurrentMonth }"
+        @click="day ? openAdd(formatDate(new Date(currentDate.getFullYear(), currentDate.getMonth(), day).toISOString())) : null"
       >
         <div v-if="day" class="day-number">{{ day }}</div>
         <div class="day-events">
@@ -267,7 +345,7 @@ onMounted(() => {
             class="event-chip"
             :class="{ 'deadline-chip': evt.extendedProps.event_type === 'deadline' }"
             :style="{ backgroundColor: evt.color + '20', color: evt.color, borderColor: evt.color }"
-            @click="goToDelivery(evt.extendedProps.delivery_id)"
+            @click.stop="openEdit(evt)"
           >
             {{ evt.title }}
           </div>
@@ -275,10 +353,27 @@ onMounted(() => {
       </div>
     </div>
 
-    <el-dialog v-model="dialogVisible" title="新建事件" width="500px">
+    <!-- 周视图 -->
+    <div v-else class="week-view">
+      <div class="week-header">
+        {{ weekRange.start.getMonth() + 1 }}月{{ weekRange.start.getDate() }}日 -
+        {{ weekRange.end.getMonth() + 1 }}月{{ weekRange.end.getDate() }}日
+      </div>
+      <el-empty v-if="weekEvents.length === 0" description="本周暂无事件" />
+      <div v-for="evt in weekEvents" :key="evt.id" class="week-event-item" @click="openEdit(evt)">
+        <div class="week-event-dot" :style="{ backgroundColor: evt.color }" />
+        <div class="week-event-info">
+          <div class="week-event-title">{{ evt.title }}</div>
+          <div class="week-event-time">{{ formatDateTime(evt.start) }}</div>
+        </div>
+        <el-button text size="small" type="primary" @click.stop="openEdit(evt)">编辑</el-button>
+      </div>
+    </div>
+
+    <el-dialog v-model="dialogVisible" :title="dialogMode === 'edit' ? '编辑事件' : '新建事件'" width="500px">
       <el-form label-width="80px">
         <el-form-item label="投递">
-          <el-select v-model="editingEvent.delivery_id" placeholder="选择投递" style="width: 100%">
+          <el-select v-model="editingEvent.delivery_id" placeholder="选择投递" :disabled="dialogMode === 'edit'" style="width: 100%">
             <el-option v-for="d in deliveries" :key="d.id" :label="`${d.company} - ${d.position}`" :value="d.id" />
           </el-select>
         </el-form-item>
@@ -292,11 +387,26 @@ onMounted(() => {
             />
           </el-select>
         </el-form-item>
+        <el-form-item label="轮次">
+          <el-input-number v-model="editingEvent.round_number" :min="1" style="width: 100%" />
+        </el-form-item>
         <el-form-item label="时间">
           <el-date-picker v-model="editingEvent.scheduled_at" type="datetime" placeholder="选择日期时间" style="width: 100%" value-format="YYYY-MM-DDTHH:mm" />
         </el-form-item>
         <el-form-item label="时长">
           <el-input-number v-model="editingEvent.duration_minutes" :min="15" :step="15" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="地点">
+          <el-input v-model="editingEvent.location" placeholder="面试地点" />
+        </el-form-item>
+        <el-form-item label="会议链接">
+          <el-input v-model="editingEvent.meeting_link" placeholder="腾讯会议/Zoom链接" />
+        </el-form-item>
+        <el-form-item label="面试官">
+          <el-input v-model="editingEvent.interviewer" placeholder="面试官姓名" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="editingEvent.notes" type="textarea" :rows="2" placeholder="备注信息" />
         </el-form-item>
       </el-form>
       <template #footer>
@@ -390,6 +500,68 @@ onMounted(() => {
   font-weight: 600;
   border-style: dashed;
 }
+
+.calendar-day.is-today .day-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: #3b82f6;
+  color: #fff;
+  border-radius: 50%;
+}
+
+.week-view {
+  background: #fff;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.week-header {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1e3a5f;
+  margin-bottom: 16px;
+}
+
+.week-event-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.week-event-item:hover {
+  background: #f8fafc;
+}
+
+.week-event-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.week-event-info {
+  flex: 1;
+}
+
+.week-event-title {
+  font-weight: 500;
+  color: #1e3a5f;
+}
+
+.week-event-time {
+  font-size: 13px;
+  color: #64748b;
+  margin-top: 2px;
+}
+
 .interview-alerts {
   display: flex;
   flex-direction: column;
