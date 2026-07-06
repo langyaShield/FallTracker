@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     LLM_API_KEY: str = ""
     LLM_API_BASE: str = "https://api.deepseek.com/v1"
     LLM_MODEL: str = "deepseek-chat"
+    # 固定 API KEY 认证（供 Hermes 等 MCP 客户端使用，无需动态登录获取 JWT）
+    MCP_API_KEY: str = ""
+    MCP_API_USER_ID: int = 1
     CORS_ORIGINS: str = "*"  # Comma-separated origins, e.g. "http://localhost:5173,http://localhost:3000"
 
     class Config:

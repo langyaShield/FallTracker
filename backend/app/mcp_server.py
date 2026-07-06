@@ -53,6 +53,21 @@ logger = logging.getLogger("falltracker.mcp")
 # ---------------------------------------------------------------------------
 # FastMCP instance
 # ---------------------------------------------------------------------------
+# 根据配置动态生成认证说明，让 MCP 客户端连接时就知道如何认证
+if settings.MCP_API_KEY:
+    _auth_hint = (
+        "Authentication: This server requires a fixed API KEY. "
+        "Set the 'Authorization' header to 'Bearer <MCP_API_KEY>' on every request. "
+        f"The MCP_API_KEY is configured in the server's .env file (current value starts with '{settings.MCP_API_KEY[:4]}...'). "
+        "Without this header, all tool calls will return 401 Unauthorized."
+    )
+else:
+    _auth_hint = (
+        "Authentication: Call POST /api/auth/login with username and password "
+        "to obtain a JWT token, then send it as 'Authorization: Bearer <token>' "
+        "on every request. Without this header, all tool calls will return 401."
+    )
+
 mcp = FastMCP(
     "FallTrackerAgent",
     instructions=(
@@ -60,7 +75,8 @@ mcp = FastMCP(
         "job application data. Use the provided tools to query and modify "
         "deliveries, interviews, profile, resumes, reviews, bookmarks, "
         "notifications and statistics. Always verify the user's identity "
-        "from the request context before performing any action."
+        "from the request context before performing any action.\n\n"
+        + _auth_hint
     ),
     stateless_http=True,
     # Use "/" so the MCP endpoint is at the sub-app root.
@@ -146,10 +162,25 @@ def _extract_bearer(ctx: Context) -> str:
 
 
 def _get_user(ctx: Context) -> tuple[User, Session]:
-    """Resolve current user and return it together with the DB session."""
+    """Resolve current user and return it together with the DB session.
+
+    支持两种认证方式：
+    1. 固定 API KEY：当 token 与 settings.MCP_API_KEY 匹配时，直接返回
+       settings.MCP_API_USER_ID 关联的用户（供 Hermes 等 MCP 客户端使用）
+    2. JWT Bearer token：现有的动态认证方式
+    """
     token = _extract_bearer(ctx)
     db = _with_session()
     try:
+        # 优先检查固定 API KEY
+        if settings.MCP_API_KEY and token == settings.MCP_API_KEY:
+            user = db.query(User).filter(User.id == settings.MCP_API_USER_ID).first()
+            if user is None:
+                raise HTTPException(status_code=401, detail="MCP API KEY 关联的用户不存在")
+            if user.is_disabled:
+                raise HTTPException(status_code=403, detail="账户已被禁用，请联系管理员")
+            return user, db
+        # 否则走 JWT 认证
         user = _get_current_user_sync(token, db)
         return user, db
     except Exception:
