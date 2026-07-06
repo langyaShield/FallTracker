@@ -225,13 +225,30 @@ if os.path.isdir(assets_dir):
     app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
 # Mount MCP server for Hermes Agent (stateless HTTP transport).
-# The FastMCP streamable HTTP app exposes its endpoint at path /mcp internally,
-# so we mount at root to make the final URL /mcp. Placed after /assets so
-# static files are served by the main app first; placed before the SPA
-# catch-all so /mcp is handled by the MCP subapp.
-# streamable_http_app() internally registers a Route at /mcp,
-# so we mount at root to expose it at /mcp (not /mcp/mcp).
-app.mount("", mcp.streamable_http_app())
+# Starlette's app.mount() only matches /mcp/... (with trailing slash) when
+# other routes like the SPA catch-all exist. To support /mcp (without slash),
+# we use an ASGI middleware that intercepts /mcp* paths and delegates to the
+# MCP sub-application directly, before Starlette's routing takes over.
+mcp_app = mcp.streamable_http_app()
+
+from starlette.types import Scope, Receive, Send
+
+class MCPMiddleware:
+    """ASGI middleware: routes /mcp and /mcp/* to the MCP sub-application."""
+    def __init__(self, app, mcp_app):
+        self.app = app
+        self.mcp_app = mcp_app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "http" and scope["path"].startswith("/mcp"):
+            scope = dict(scope)
+            path = scope["path"]
+            scope["path"] = path[4:] if len(path) > 4 else "/"
+            await self.mcp_app(scope, receive, send)
+        else:
+            await self.app(scope, receive, send)
+
+app.add_middleware(MCPMiddleware, mcp_app=mcp_app)
 
 if os.path.isdir(FRONTEND_DIST):
     @app.get("/{full_path:path}")

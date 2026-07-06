@@ -63,6 +63,10 @@ mcp = FastMCP(
         "from the request context before performing any action."
     ),
     stateless_http=True,
+    # Use "/" so the MCP endpoint is at the sub-app root.
+    # The ASGI middleware in main.py strips the /mcp prefix, so the MCP
+    # app sees "/" for requests to /mcp and "/..." for /mcp/...
+    streamable_http_path="/",
     transport_security={
         "enable_dns_rebinding_protection": True,
         "allowed_hosts": [
