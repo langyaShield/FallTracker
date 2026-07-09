@@ -233,22 +233,21 @@ class ReviewCreate(BaseModel):
 
 class ReviewUpdate(BaseModel):
     raw_notes: Optional[str] = None
-    structured_qa: Optional[list] = None
-    tags: Optional[List[str]] = None
-    reflection: Optional[str] = None
 
 
 class ReviewOut(BaseModel):
     id: int
     delivery_id: int
     raw_notes: str
-    structured_qa: Optional[list]
-    tags: Optional[List[str]]
-    reflection: Optional[str]
     created_at: datetime
     updated_at: datetime
     class Config:
         from_attributes = True
+
+
+class ReviewListOut(BaseModel):
+    items: List[ReviewOut]
+    total: int
 
 
 class UserSettingsUpdate(BaseModel):

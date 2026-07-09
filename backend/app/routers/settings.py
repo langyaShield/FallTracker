@@ -9,6 +9,7 @@ from app.crypto import encrypt_value, decrypt_value
 from email.mime.text import MIMEText
 import smtplib
 import httpx
+from app.ratelimit import limiter
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -47,7 +48,8 @@ def _mask(value: str | None) -> str:
 
 
 @router.get("", response_model=UserSettingsOut)
-def read_settings(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@limiter.limit("60/minute")
+def read_settings(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     s = get_user_settings(db, current_user.id)
     key = decrypt_value(s.llm_api_key)
     if key and len(key) > 4:
@@ -61,7 +63,9 @@ def read_settings(db: Session = Depends(get_db), current_user: User = Depends(ge
 
 
 @router.put("", response_model=UserSettingsOut)
+@limiter.limit("30/minute")
 def update_settings(
+    request: Request,
     data: UserSettingsUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -89,7 +93,9 @@ def update_settings(
 
 
 @router.post("/llm/test", response_model=LLMTestResult)
+@limiter.limit("30/minute")
 def test_llm_settings(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -155,7 +161,8 @@ def test_llm_settings(
 
 
 @router.get("/email", response_model=EmailSettingsOut)
-def read_email_settings(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@limiter.limit("60/minute")
+def read_email_settings(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Get email SMTP settings. Password is masked for security."""
     s = get_user_settings(db, current_user.id)
     pwd = decrypt_value(s.smtp_password)
@@ -171,7 +178,9 @@ def read_email_settings(db: Session = Depends(get_db), current_user: User = Depe
 
 
 @router.put("/email", response_model=EmailSettingsOut)
+@limiter.limit("30/minute")
 def update_email_settings(
+    request: Request,
     data: EmailSettingsUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -228,7 +237,9 @@ def _send_test_email(server: str, port: int, username: str, password: str, from_
 
 
 @router.post("/email/test", response_model=EmailTestResult)
+@limiter.limit("30/minute")
 def test_email_settings(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -261,7 +272,8 @@ def test_email_settings(
 
 
 @router.get("/cos", response_model=CosSettingsOut)
-def read_cos_settings(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@limiter.limit("60/minute")
+def read_cos_settings(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Get COS settings. SecretId/SecretKey are masked for security."""
     s = get_user_settings(db, current_user.id)
     return CosSettingsOut(
@@ -275,7 +287,9 @@ def read_cos_settings(db: Session = Depends(get_db), current_user: User = Depend
 
 
 @router.put("/cos", response_model=CosSettingsOut)
+@limiter.limit("30/minute")
 def update_cos_settings(
+    request: Request,
     data: CosSettingsUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),

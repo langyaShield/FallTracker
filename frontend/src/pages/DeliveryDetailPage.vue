@@ -206,8 +206,8 @@ const fetchResumes = async () => {
   try {
     const res = await api.get('/resumes')
     resumes.value = res.data?.items || []
-  } catch {
-    // ignore
+  } catch (e) {
+    console.warn('简历列表加载失败', e)
   }
 }
 
@@ -219,8 +219,8 @@ const fetchTagSuggestions = async () => {
     const allTags = new Set<string>()
     ;(res.data || []).forEach((d: Delivery) => (d.tags || []).forEach((t) => allTags.add(t)))
     tagOptions.value = Array.from(allTags).map((t) => ({ value: t, label: t }))
-  } catch {
-    // ignore
+  } catch (e) {
+    console.warn('标签建议加载失败', e)
   }
 }
 
@@ -382,7 +382,7 @@ onMounted(() => {
         </el-card>
       </div>
 
-      <button class="panel-toggle-btn" :title="rightPanelCollapsed ? '展开时间线' : '收起时间线'" @click="rightPanelCollapsed = !rightPanelCollapsed">
+      <button class="panel-toggle-btn" :title="rightPanelCollapsed ? '展开时间线' : '收起时间线'" :aria-label="rightPanelCollapsed ? '展开时间线' : '收起时间线'" @click="rightPanelCollapsed = !rightPanelCollapsed">
         <el-icon :size="14"><component :is="rightPanelCollapsed ? ArrowLeft : ArrowRight" /></el-icon>
       </button>
 
@@ -445,8 +445,8 @@ onMounted(() => {
                 <div class="event-header">
                   <span class="event-type">{{ EVENT_TYPE_LABEL_MAP[evt.event_type] || evt.event_type }}</span>
                   <span class="event-round">第{{ evt.round_number }}轮</span>
-                  <el-button text size="small" :icon="Edit" @click="startInlineEdit(evt)" />
-                  <el-button text size="small" type="danger" :icon="Delete" @click="deleteEvent(evt.id)" />
+                  <el-button text size="small" :icon="Edit" aria-label="编辑事件" @click="startInlineEdit(evt)" />
+                  <el-button text size="small" type="danger" :icon="Delete" aria-label="删除事件" @click="deleteEvent(evt.id)" />
                 </div>
                 <div class="event-time">{{ formatDateTime(evt.scheduled_at) }} · {{ evt.duration_minutes }}分钟</div>
                 <div v-if="evt.interviewer" class="event-meta">面试官：{{ evt.interviewer }}</div>
@@ -471,6 +471,7 @@ onMounted(() => {
         circle
         size="large"
         :icon="Plus"
+        :aria-label="fabOpen ? '收起快捷操作' : '展开快捷操作'"
         @click="fabOpen = !fabOpen"
       />
       <transition name="fab-slide">
@@ -482,7 +483,7 @@ onMounted(() => {
             @click="item.action(); fabOpen = false"
           >
             <span class="fab-label">{{ item.label }}</span>
-            <el-button circle size="small" :icon="item.icon" />
+            <el-button circle size="small" :icon="item.icon" :aria-label="item.label" />
           </div>
         </div>
       </transition>
@@ -551,7 +552,7 @@ onMounted(() => {
 
 .detail-time {
   font-size: 13px;
-  color: #94a3b8;
+  color: #64748b;
   white-space: nowrap;
 }
 
@@ -592,7 +593,7 @@ onMounted(() => {
   border-left: 1px solid #e2e8f0;
   border-right: 1px solid #e2e8f0;
   cursor: pointer;
-  color: #94a3b8;
+  color: #64748b;
   transition: color 0.2s, background 0.2s;
   padding: 0;
   flex-shrink: 0;
@@ -670,7 +671,7 @@ onMounted(() => {
 
 .auto-save-hint {
   font-size: 12px;
-  color: #94a3b8;
+  color: #64748b;
   margin-top: 4px;
 }
 

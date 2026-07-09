@@ -62,7 +62,9 @@ CSV_HEADER_MAP = {
 
 
 @router.get("", response_model=List[DeliveryOut])
+@limiter.limit("60/minute")
 def list_deliveries(
+    request: Request,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     search: Optional[str] = Query(None, description="搜索公司名或岗位"),
@@ -113,7 +115,9 @@ def list_deliveries(
 
 
 @router.get("/upcoming-deadlines", response_model=List[DeliveryOut])
+@limiter.limit("60/minute")
 def upcoming_deadlines(
+    request: Request,
     days: int = Query(7, ge=1, le=30, description="未来 N 天内"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -135,7 +139,9 @@ def upcoming_deadlines(
 
 
 @router.get("/tags", response_model=List[TagCountOut])
+@limiter.limit("60/minute")
 def get_all_tags(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -151,7 +157,9 @@ def get_all_tags(
 
 
 @router.post("/import/preview", response_model=ImportPreviewResponse)
+@limiter.limit("30/minute")
 async def import_preview(
+    request: Request,
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
 ):
@@ -263,7 +271,9 @@ async def import_csv(
 
 
 @router.get("/export")
+@limiter.limit("60/minute")
 def export_csv(
+    request: Request,
     status: Optional[List[str]] = Query(None, description="按状态筛选导出"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -298,7 +308,9 @@ def export_csv(
 
 
 @router.put("/batch/status")
+@limiter.limit("30/minute")
 def batch_update_status(
+    request: Request,
     data: BatchStatusUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -314,7 +326,9 @@ def batch_update_status(
 
 
 @router.put("/batch/tags")
+@limiter.limit("30/minute")
 def batch_update_tags(
+    request: Request,
     data: BatchTagsUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -339,7 +353,9 @@ def batch_update_tags(
 
 
 @router.delete("/batch")
+@limiter.limit("30/minute")
 def batch_delete(
+    request: Request,
     data: BatchIdsRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -355,7 +371,8 @@ def batch_delete(
 
 
 @router.post("", response_model=DeliveryOut)
-def create_delivery(data: DeliveryCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+def create_delivery(request: Request, data: DeliveryCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     db_item = Delivery(**data.model_dump(), user_id=current_user.id)
     db.add(db_item)
     db.commit()
@@ -364,18 +381,20 @@ def create_delivery(data: DeliveryCreate, db: Session = Depends(get_db), current
 
 
 @router.get("/{delivery_id}", response_model=DeliveryOut)
-def get_delivery(delivery_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@limiter.limit("60/minute")
+def get_delivery(delivery_id: int, request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     item = db.query(Delivery).filter(Delivery.id == delivery_id, Delivery.user_id == current_user.id).first()
     if not item:
-        raise HTTPException(status_code=404, detail="Delivery not found")
+        raise HTTPException(status_code=404, detail="投递不存在")
     return item
 
 
 @router.put("/{delivery_id}", response_model=DeliveryOut)
-def update_delivery(delivery_id: int, data: DeliveryUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+def update_delivery(delivery_id: int, request: Request, data: DeliveryUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     item = db.query(Delivery).filter(Delivery.id == delivery_id, Delivery.user_id == current_user.id).first()
     if not item:
-        raise HTTPException(status_code=404, detail="Delivery not found")
+        raise HTTPException(status_code=404, detail="投递不存在")
     old_status = item.status
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(item, field, value)
@@ -388,28 +407,31 @@ def update_delivery(delivery_id: int, data: DeliveryUpdate, db: Session = Depend
 
 
 @router.delete("/{delivery_id}")
-def delete_delivery(delivery_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+def delete_delivery(delivery_id: int, request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     item = db.query(Delivery).filter(Delivery.id == delivery_id, Delivery.user_id == current_user.id).first()
     if not item:
-        raise HTTPException(status_code=404, detail="Delivery not found")
+        raise HTTPException(status_code=404, detail="投递不存在")
     db.delete(item)
     db.commit()
     return {"ok": True}
 
 
 @router.get("/{delivery_id}/events", response_model=List[InterviewEventOut])
-def list_events(delivery_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@limiter.limit("60/minute")
+def list_events(delivery_id: int, request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     delivery = db.query(Delivery).filter(Delivery.id == delivery_id, Delivery.user_id == current_user.id).first()
     if not delivery:
-        raise HTTPException(status_code=404, detail="Delivery not found")
+        raise HTTPException(status_code=404, detail="投递不存在")
     return db.query(InterviewEvent).filter(InterviewEvent.delivery_id == delivery_id).order_by(InterviewEvent.scheduled_at).all()
 
 
 @router.post("/{delivery_id}/events", response_model=InterviewEventOut)
-def create_event(delivery_id: int, data: InterviewEventCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+def create_event(delivery_id: int, request: Request, data: InterviewEventCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     delivery = db.query(Delivery).filter(Delivery.id == delivery_id, Delivery.user_id == current_user.id).first()
     if not delivery:
-        raise HTTPException(status_code=404, detail="Delivery not found")
+        raise HTTPException(status_code=404, detail="投递不存在")
     # 防止重复创建：同一投递下相同 event_type + scheduled_at 视为重复
     existing = db.query(InterviewEvent).filter(
         InterviewEvent.delivery_id == delivery_id,
@@ -431,15 +453,17 @@ def create_event(delivery_id: int, data: InterviewEventCreate, db: Session = Dep
 
 
 @router.get("/{delivery_id}/logs", response_model=List[DeliveryLogOut])
+@limiter.limit("60/minute")
 def list_delivery_logs(
     delivery_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """获取某投递的活动日志，按时间倒序。"""
     delivery = db.query(Delivery).filter(Delivery.id == delivery_id, Delivery.user_id == current_user.id).first()
     if not delivery:
-        raise HTTPException(status_code=404, detail="Delivery not found")
+        raise HTTPException(status_code=404, detail="投递不存在")
     return (
         db.query(DeliveryLog)
         .filter(DeliveryLog.delivery_id == delivery_id)
@@ -452,15 +476,17 @@ def list_delivery_logs(
 
 
 @router.get("/{delivery_id}/notes", response_model=List[DeliveryNoteOut])
+@limiter.limit("60/minute")
 def list_delivery_notes(
     delivery_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """获取某投递的所有备注，按时间倒序。"""
     delivery = db.query(Delivery).filter(Delivery.id == delivery_id, Delivery.user_id == current_user.id).first()
     if not delivery:
-        raise HTTPException(status_code=404, detail="Delivery not found")
+        raise HTTPException(status_code=404, detail="投递不存在")
     return (
         db.query(DeliveryNote)
         .filter(DeliveryNote.delivery_id == delivery_id)
@@ -470,8 +496,10 @@ def list_delivery_notes(
 
 
 @router.post("/{delivery_id}/notes", response_model=DeliveryNoteOut)
+@limiter.limit("30/minute")
 def create_delivery_note(
     delivery_id: int,
+    request: Request,
     data: DeliveryNoteCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -479,7 +507,7 @@ def create_delivery_note(
     """为某投递创建备注，并记录活动日志。"""
     delivery = db.query(Delivery).filter(Delivery.id == delivery_id, Delivery.user_id == current_user.id).first()
     if not delivery:
-        raise HTTPException(status_code=404, detail="Delivery not found")
+        raise HTTPException(status_code=404, detail="投递不存在")
     note = DeliveryNote(
         delivery_id=delivery_id,
         user_id=current_user.id,
@@ -494,9 +522,11 @@ def create_delivery_note(
 
 
 @router.put("/{delivery_id}/notes/{note_id}", response_model=DeliveryNoteOut)
+@limiter.limit("30/minute")
 def update_delivery_note(
     delivery_id: int,
     note_id: int,
+    request: Request,
     data: DeliveryNoteUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -504,13 +534,13 @@ def update_delivery_note(
     """更新某投递的指定备注。"""
     delivery = db.query(Delivery).filter(Delivery.id == delivery_id, Delivery.user_id == current_user.id).first()
     if not delivery:
-        raise HTTPException(status_code=404, detail="Delivery not found")
+        raise HTTPException(status_code=404, detail="投递不存在")
     note = db.query(DeliveryNote).filter(
         DeliveryNote.id == note_id,
         DeliveryNote.delivery_id == delivery_id,
     ).first()
     if not note:
-        raise HTTPException(status_code=404, detail="Note not found")
+        raise HTTPException(status_code=404, detail="笔记不存在")
     note.content = data.content
     db.commit()
     db.refresh(note)
@@ -518,22 +548,24 @@ def update_delivery_note(
 
 
 @router.delete("/{delivery_id}/notes/{note_id}")
+@limiter.limit("30/minute")
 def delete_delivery_note(
     delivery_id: int,
     note_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """删除某投递的指定备注。"""
     delivery = db.query(Delivery).filter(Delivery.id == delivery_id, Delivery.user_id == current_user.id).first()
     if not delivery:
-        raise HTTPException(status_code=404, detail="Delivery not found")
+        raise HTTPException(status_code=404, detail="投递不存在")
     note = db.query(DeliveryNote).filter(
         DeliveryNote.id == note_id,
         DeliveryNote.delivery_id == delivery_id,
     ).first()
     if not note:
-        raise HTTPException(status_code=404, detail="Note not found")
+        raise HTTPException(status_code=404, detail="笔记不存在")
     db.delete(note)
     db.commit()
     return {"ok": True}

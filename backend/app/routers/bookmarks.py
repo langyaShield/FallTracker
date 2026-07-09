@@ -1,32 +1,41 @@
 """常用网站书签：CRUD 操作，支持分类管理。"""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import Bookmark, User
 from app.schemas import BookmarkCreate, BookmarkOut, BookmarkUpdate
+from app.ratelimit import limiter
 
 router = APIRouter(prefix="/bookmarks", tags=["bookmarks"])
 
 
 @router.get("", response_model=list[BookmarkOut])
+@limiter.limit("60/minute")
 def list_bookmarks(
+    request: Request,
+    limit: int = 0,
+    offset: int = 0,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """获取当前用户所有书签，按 sort_order 和创建时间排序。"""
-    bookmarks = (
+    """获取当前用户所有书签，按 sort_order 和创建时间排序。支持 limit/offset 分页。"""
+    q = (
         db.query(Bookmark)
         .filter(Bookmark.user_id == current_user.id)
         .order_by(Bookmark.sort_order, Bookmark.created_at)
-        .all()
     )
+    if limit > 0:
+        q = q.limit(limit).offset(offset)
+    bookmarks = q.all()
     return [BookmarkOut.model_validate(b) for b in bookmarks]
 
 
 @router.post("", response_model=BookmarkOut)
+@limiter.limit("30/minute")
 def create_bookmark(
+    request: Request,
     data: BookmarkCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -47,8 +56,10 @@ def create_bookmark(
 
 
 @router.put("/{bookmark_id}", response_model=BookmarkOut)
+@limiter.limit("30/minute")
 def update_bookmark(
     bookmark_id: int,
+    request: Request,
     data: BookmarkUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -69,8 +80,10 @@ def update_bookmark(
 
 
 @router.delete("/{bookmark_id}")
+@limiter.limit("30/minute")
 def delete_bookmark(
     bookmark_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

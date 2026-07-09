@@ -629,7 +629,7 @@ onMounted(() => {
             <el-table-column label="操作" width="140" fixed="right">
               <template #default="{ row }">
                 <el-button link type="primary" size="small" @click="openRenameDialog(row.key)">重命名</el-button>
-                <el-button link type="danger" size="small" :loading="cosDeleting" @click="deleteCosBackup(row.key)">
+                <el-button link type="danger" size="small" :loading="cosDeleting" aria-label="删除备份" @click="deleteCosBackup(row.key)">
                   <el-icon><Delete /></el-icon>
                 </el-button>
               </template>
@@ -734,7 +734,7 @@ onMounted(() => {
 
 .backup-hint {
   font-size: 12px;
-  color: #94a3b8;
+  color: #64748b;
 }
 
 .import-controls {
@@ -746,7 +746,7 @@ onMounted(() => {
 .mode-hint {
   margin-top: 8px;
   font-size: 12px;
-  color: #94a3b8;
+  color: #64748b;
   padding: 8px 12px;
   background: #f8fafc;
   border-radius: 6px;
@@ -832,7 +832,7 @@ onMounted(() => {
 
 .auto-backup-hint {
   font-size: 12px;
-  color: #94a3b8;
+  color: #64748b;
   margin-top: 4px;
 }
 

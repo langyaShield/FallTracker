@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime, timedelta, timezone
@@ -11,12 +11,15 @@ from app.schemas import (
     InterviewEventOut,
 )
 from app.auth import get_current_user
+from app.ratelimit import limiter
 
 router = APIRouter(prefix="/events", tags=["events"])
 
 
 @router.get("", response_model=List[InterviewEventWithDeliveryOut])
+@limiter.limit("60/minute")
 def list_all_events(
+    request: Request,
     upcoming: bool = False,
     limit: int = 0,
     db: Session = Depends(get_db),
@@ -50,10 +53,11 @@ def list_all_events(
 
 
 @router.put("/{event_id}", response_model=InterviewEventOut)
-def update_event(event_id: int, data: InterviewEventUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+def update_event(event_id: int, request: Request, data: InterviewEventUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     event = db.query(InterviewEvent).join(Delivery).filter(InterviewEvent.id == event_id, Delivery.user_id == current_user.id).first()
     if not event:
-        raise HTTPException(status_code=404, detail="Event not found")
+        raise HTTPException(status_code=404, detail="事件不存在")
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(event, field, value)
     db.commit()
@@ -62,10 +66,11 @@ def update_event(event_id: int, data: InterviewEventUpdate, db: Session = Depend
 
 
 @router.delete("/{event_id}")
-def delete_event(event_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+def delete_event(event_id: int, request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     event = db.query(InterviewEvent).join(Delivery).filter(InterviewEvent.id == event_id, Delivery.user_id == current_user.id).first()
     if not event:
-        raise HTTPException(status_code=404, detail="Event not found")
+        raise HTTPException(status_code=404, detail="事件不存在")
     db.delete(event)
     db.commit()
     return {"ok": True}
@@ -90,7 +95,9 @@ def _format_ics_datetime(dt: datetime) -> str:
 
 
 @router.get("/export.ics")
+@limiter.limit("60/minute")
 def export_ics(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

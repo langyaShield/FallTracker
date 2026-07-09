@@ -237,6 +237,7 @@ onMounted(fetchProfile)
                 link
                 type="danger"
                 :icon="Delete"
+                aria-label="删除字段"
                 @click="removeBasicField(idx)"
               />
             </div>
@@ -292,7 +293,7 @@ onMounted(fetchProfile)
                   />
                   <el-input v-else v-model="field.value" :placeholder="getCategoryFieldLabel('education', field.key)" clearable />
                 </div>
-                <el-button link type="danger" :icon="Delete" @click="removeFieldFromGroup(group, fi)" />
+                <el-button link type="danger" :icon="Delete" aria-label="删除字段" @click="removeFieldFromGroup(group, fi)" />
               </div>
             </div>
 
@@ -354,7 +355,7 @@ onMounted(fetchProfile)
                   />
                   <el-input v-else v-model="field.value" :placeholder="getCategoryFieldLabel('work', field.key)" clearable />
                 </div>
-                <el-button link type="danger" :icon="Delete" @click="removeFieldFromGroup(group, fi)" />
+                <el-button link type="danger" :icon="Delete" aria-label="删除字段" @click="removeFieldFromGroup(group, fi)" />
               </div>
             </div>
 

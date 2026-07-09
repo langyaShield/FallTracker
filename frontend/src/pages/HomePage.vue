@@ -5,7 +5,7 @@ import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
 import api from '@/lib/api'
 import { STATUS_LABEL_MAP, STATUS_COLOR_MAP, EVENT_TYPE_LABEL_MAP, EVENT_TYPE_COLOR_MAP } from '@/lib/constants'
-import { formatShortDateTime } from '@/lib/format'
+import { formatShortDateTime, getDeadlineUrgency } from '@/lib/format'
 import { extractErrorMessage } from '@/lib/error'
 import { TrendCharts, Calendar, Document, EditPen, Plus, Upload, Clock } from '@element-plus/icons-vue'
 
@@ -64,18 +64,6 @@ const fetchUrgentDeadlines = async () => {
   } catch (e: unknown) {
     // non-critical, silent fail
   }
-}
-
-const getDeadlineUrgency = (deadline: string): 'expired' | 'urgent' | 'warning' | 'normal' => {
-  if (!deadline) return 'normal'
-  const now = new Date()
-  const dl = new Date(deadline)
-  const diffMs = dl.getTime() - now.getTime()
-  const diffHours = diffMs / (1000 * 60 * 60)
-  if (diffMs < 0) return 'expired'
-  if (diffHours <= 24) return 'urgent'
-  if (diffHours <= 48) return 'warning'
-  return 'normal'
 }
 
 const formatCountdown = (deadline: string): string => {
@@ -449,7 +437,7 @@ onUnmounted(() => {
 
 .empty-hint {
   text-align: center;
-  color: #94a3b8;
+  color: #64748b;
   padding: 24px 0;
   font-size: 14px;
 }
@@ -485,7 +473,7 @@ onUnmounted(() => {
 
 .event-time {
   font-size: 12px;
-  color: #94a3b8;
+  color: #64748b;
   margin-top: 2px;
 }
 

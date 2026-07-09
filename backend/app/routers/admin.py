@@ -8,7 +8,7 @@ import secrets
 import string
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -16,6 +16,7 @@ from app.auth import get_admin_user
 from app.database import get_db
 from app.models import User, Delivery, Resume, InviteCode
 from app.schemas import AdminUserOut, InviteCodeCreate, InviteCodeOut
+from app.ratelimit import limiter
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -32,7 +33,9 @@ def _generate_code(length: int = 8) -> str:
 
 
 @router.get("/users", response_model=list[AdminUserOut])
+@limiter.limit("60/minute")
 def list_users(
+    request: Request,
     db: Session = Depends(get_db),
     _admin: User = Depends(get_admin_user),
 ):
@@ -65,8 +68,10 @@ def list_users(
 
 
 @router.post("/users/{user_id}/disable")
+@limiter.limit("30/minute")
 def disable_user(
     user_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     admin: User = Depends(get_admin_user),
 ):
@@ -84,8 +89,10 @@ def disable_user(
 
 
 @router.post("/users/{user_id}/enable")
+@limiter.limit("30/minute")
 def enable_user(
     user_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     _admin: User = Depends(get_admin_user),
 ):
@@ -106,7 +113,9 @@ def enable_user(
 
 
 @router.post("/invite-codes", response_model=list[InviteCodeOut])
+@limiter.limit("30/minute")
 def create_invite_codes(
+    request: Request,
     data: InviteCodeCreate,
     db: Session = Depends(get_db),
     admin: User = Depends(get_admin_user),
@@ -148,7 +157,9 @@ def create_invite_codes(
 
 
 @router.get("/invite-codes", response_model=list[InviteCodeOut])
+@limiter.limit("60/minute")
 def list_invite_codes(
+    request: Request,
     db: Session = Depends(get_db),
     _admin: User = Depends(get_admin_user),
 ):
@@ -208,7 +219,9 @@ def cleanup_expired_invite_codes():
 
 
 @router.delete("/invite-codes/expired")
+@limiter.limit("30/minute")
 def delete_expired_invite_codes(
+    request: Request,
     db: Session = Depends(get_db),
     _admin: User = Depends(get_admin_user),
 ):
@@ -227,8 +240,10 @@ def delete_expired_invite_codes(
 
 
 @router.delete("/invite-codes/{code_id}")
+@limiter.limit("30/minute")
 def delete_invite_code(
     code_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     _admin: User = Depends(get_admin_user),
 ):

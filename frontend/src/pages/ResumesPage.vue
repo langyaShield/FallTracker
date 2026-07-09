@@ -150,8 +150,8 @@ const fetchDeliveries = async () => {
   try {
     const res = await api.get('/deliveries')
     deliveries.value = res.data || []
-  } catch {
-    // 非关键信息，静默失败
+  } catch (e) {
+    console.warn('投递列表加载失败', e)
   }
 }
 
@@ -730,7 +730,7 @@ onUnmounted(() => {
 
 .list-summary {
   font-size: 13px;
-  color: #94a3b8;
+  color: #64748b;
   margin-bottom: 12px;
 }
 
@@ -791,7 +791,7 @@ onUnmounted(() => {
 
 .resume-sub {
   font-size: 12px;
-  color: #94a3b8;
+  color: #64748b;
   margin-top: 4px;
   display: flex;
   gap: 10px;
@@ -825,7 +825,7 @@ onUnmounted(() => {
 
 .no-delivery {
   font-size: 12px;
-  color: #94a3b8;
+  color: #64748b;
 }
 
 .ocr-status-area {

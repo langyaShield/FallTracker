@@ -9,16 +9,13 @@ resource isolation.
 """
 from __future__ import annotations
 
-import json
-import logging
 import os
 import re
 import threading
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
@@ -60,7 +57,6 @@ from app.schemas import (
     ReviewUpdate,
 )
 
-logger = logging.getLogger("falltracker.agent")
 router = APIRouter(prefix="/agent", tags=["agent"])
 
 VALID_DELIVERY_STATUSES = {"pending", "delivered", "written", "interview", "offer", "rejected"}
@@ -298,7 +294,7 @@ def list_upcoming_events(
 ):
     """List upcoming interview events within the next N days."""
     now = datetime.now(timezone.utc)
-    horizon = now + __import__("datetime").timedelta(days=days)
+    horizon = now + timedelta(days=days)
     rows = (
         db.query(InterviewEvent, Delivery.company, Delivery.position)
         .join(Delivery, InterviewEvent.delivery_id == Delivery.id)
@@ -620,70 +616,6 @@ def update_review(
     return ReviewOut.model_validate(r)
 
 
-@router.post("/reviews/{review_id}/generate")
-@limiter.limit("30/minute")
-def generate_structured_review(
-    request: Request,
-    review_id: int,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Use the configured LLM to generate structured QA and reflection for a review."""
-    r = db.query(Review).filter(Review.id == review_id, Review.user_id == current_user.id).first()
-    if not r:
-        raise HTTPException(status_code=404, detail="复盘不存在")
-
-    from app.routers.settings import get_llm_config
-
-    llm = get_llm_config(db, current_user.id)
-    if not llm["llm_api_key"]:
-        raise HTTPException(status_code=400, detail="LLM API key 未配置")
-
-    safe_notes = r.raw_notes[:3000].replace("```", "'''").replace("<|", "< |")
-    prompt = f"""你是一位资深技术面试官和职业导师。请根据以下面试复盘笔记，提取核心面试问答，补全标准答案，并给出面试表现反思。
-
-面试笔记：
-{safe_notes}
-
-请按以下 JSON 格式输出：
-{{
-  "qa_pairs": [
-    {{"question": "问题", "answer": "标准答案", "leetcode_link": "相关LeetCode题链接(如有)"}}
-  ],
-  "reflection": "对本次面试表现的反思与改进建议"
-}}"""
-
-    try:
-        with httpx.Client(timeout=120.0) as client:
-            resp = client.post(
-                f"{llm['llm_api_base'].rstrip('/')}/chat/completions",
-                json={
-                    "model": llm["llm_model"],
-                    "messages": [{"role": "user", "content": prompt}],
-                    "temperature": 0.3,
-                },
-                headers={
-                    "Authorization": f"Bearer {llm['llm_api_key']}",
-                    "Content-Type": "application/json",
-                },
-            )
-            resp.raise_for_status()
-            content = resp.json()["choices"][0]["message"]["content"]
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0]
-            elif "```" in content:
-                content = content.split("```")[1].split("```")[0]
-            data = json.loads(content.strip())
-            r.structured_qa = data.get("qa_pairs")
-            r.reflection = data.get("reflection")
-            db.commit()
-            db.refresh(r)
-            return {"success": True, "structured_qa": r.structured_qa, "reflection": r.reflection}
-    except Exception as exc:
-        logger.exception("Agent generate_structured_review failed")
-        raise HTTPException(status_code=500, detail="结构化生成失败") from exc
-
-
 # ---------------------------------------------------------------------------
 # Notifications
 # ---------------------------------------------------------------------------
@@ -782,7 +714,7 @@ def get_statistics_overview(
         return round(num / den * 100, 1) if den > 0 else 0
 
     now = datetime.now(timezone.utc)
-    week_start = now - __import__("datetime").timedelta(days=now.weekday())
+    week_start = now - timedelta(days=now.weekday())
     week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
 
     weekly_new = (
@@ -804,7 +736,7 @@ def get_statistics_overview(
         .scalar()
         or 0
     )
-    stale_cutoff = now - __import__("datetime").timedelta(days=7)
+    stale_cutoff = now - timedelta(days=7)
     stale_count = (
         db.query(func.count(Delivery.id))
         .filter(

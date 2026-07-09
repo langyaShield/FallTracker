@@ -1,3 +1,4 @@
+import logging
 import os
 import uuid
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, UploadFile, File, Form, Query
@@ -12,6 +13,7 @@ from app.auth import get_current_user
 from app.ratelimit import limiter
 
 router = APIRouter(prefix="/resumes", tags=["resumes"])
+logger = logging.getLogger("falltracker")
 
 UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
@@ -57,6 +59,7 @@ def _run_ocr_background(resume_id: int, file_path: str):
             resume.ocr_progress = 100
             db.commit()
     except Exception as e:
+        logger.exception("OCR failed for resume %s", resume_id)
         try:
             if db is None:
                 db = SessionLocal()
@@ -109,7 +112,9 @@ def _save_file(file_bytes: bytes, ext: str) -> tuple[str, str]:
 # ─── 列表（分页 + 总数 + 排序 + OCR状态筛选） ───
 
 @router.get("", response_model=ResumeListOut)
+@limiter.limit("60/minute")
 def list_resumes(
+    request: Request,
     limit: int = 100,
     offset: int = 0,
     sort_by: str = Query("created_at", description="排序字段: created_at / name"),
@@ -145,7 +150,9 @@ def list_resumes(
 # ─── 搜索（支持按名称 + OCR文本） ───
 
 @router.get("/search", response_model=ResumeListOut)
+@limiter.limit("60/minute")
 def search_resumes(
+    request: Request,
     q: str,
     limit: int = 20,
     offset: int = 0,
@@ -200,18 +207,21 @@ def create_resume(
 # ─── 详情 ───
 
 @router.get("/{resume_id}", response_model=ResumeOut)
-def get_resume(resume_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@limiter.limit("60/minute")
+def get_resume(resume_id: int, request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     item = db.query(Resume).filter(Resume.id == resume_id, Resume.user_id == current_user.id).first()
     if not item:
-        raise HTTPException(status_code=404, detail="Resume not found")
+        raise HTTPException(status_code=404, detail="简历不存在")
     return item
 
 
 # ─── 更新（支持重命名 + 文件替换） ───
 
 @router.put("/{resume_id}", response_model=ResumeOut)
+@limiter.limit("30/minute")
 def update_resume(
     resume_id: int,
+    request: Request,
     background_tasks: BackgroundTasks,
     name: Optional[str] = Form(None),
     ocr_text: Optional[str] = Form(None),
@@ -222,7 +232,7 @@ def update_resume(
     """更新简历：支持重命名、文件替换和OCR文本编辑。替换文件后会自动重新OCR。"""
     item = db.query(Resume).filter(Resume.id == resume_id, Resume.user_id == current_user.id).first()
     if not item:
-        raise HTTPException(status_code=404, detail="Resume not found")
+        raise HTTPException(status_code=404, detail="简历不存在")
 
     if name is not None:
         item.name = name
@@ -253,10 +263,11 @@ def update_resume(
 # ─── 删除 ───
 
 @router.delete("/{resume_id}")
-def delete_resume(resume_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@limiter.limit("30/minute")
+def delete_resume(resume_id: int, request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     item = db.query(Resume).filter(Resume.id == resume_id, Resume.user_id == current_user.id).first()
     if not item:
-        raise HTTPException(status_code=404, detail="Resume not found")
+        raise HTTPException(status_code=404, detail="简历不存在")
     if os.path.exists(item.file_path):
         os.remove(item.file_path)
     db.delete(item)
@@ -267,7 +278,9 @@ def delete_resume(resume_id: int, db: Session = Depends(get_db), current_user: U
 # ─── 批量删除 ───
 
 @router.post("/batch-delete")
+@limiter.limit("30/minute")
 def batch_delete_resumes(
+    request: Request,
     data: BatchIdsRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -288,8 +301,10 @@ def batch_delete_resumes(
 # ─── 重新触发OCR ───
 
 @router.post("/{resume_id}/re-ocr")
+@limiter.limit("30/minute")
 def re_ocr_resume(
     resume_id: int,
+    request: Request,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -297,7 +312,7 @@ def re_ocr_resume(
     """重新触发OCR识别"""
     item = db.query(Resume).filter(Resume.id == resume_id, Resume.user_id == current_user.id).first()
     if not item:
-        raise HTTPException(status_code=404, detail="Resume not found")
+        raise HTTPException(status_code=404, detail="简历不存在")
     if not os.path.exists(item.file_path):
         raise HTTPException(status_code=400, detail="简历文件不存在，无法重新OCR")
     item.ocr_status = "pending"
@@ -323,21 +338,23 @@ _MIME_TYPES = {
 
 
 @router.get("/{resume_id}/preview")
-def preview_resume(resume_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@limiter.limit("60/minute")
+def preview_resume(resume_id: int, request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     item = db.query(Resume).filter(Resume.id == resume_id, Resume.user_id == current_user.id).first()
     if not item or not os.path.exists(item.file_path):
-        raise HTTPException(status_code=404, detail="Resume not found")
+        raise HTTPException(status_code=404, detail="简历不存在")
     ext = os.path.splitext(item.file_path)[1].lower()
     media_type = _MIME_TYPES.get(ext, "application/octet-stream")
     return FileResponse(item.file_path, media_type=media_type)
 
 
 @router.get("/{resume_id}/download")
-def download_resume(resume_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@limiter.limit("60/minute")
+def download_resume(resume_id: int, request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """下载简历文件"""
     item = db.query(Resume).filter(Resume.id == resume_id, Resume.user_id == current_user.id).first()
     if not item or not os.path.exists(item.file_path):
-        raise HTTPException(status_code=404, detail="Resume not found")
+        raise HTTPException(status_code=404, detail="简历不存在")
     ext = os.path.splitext(item.file_path)[1].lower()
     media_type = _MIME_TYPES.get(ext, "application/octet-stream")
     # 使用原始名称作为下载文件名

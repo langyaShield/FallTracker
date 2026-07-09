@@ -571,7 +571,7 @@ const { shortcuts, showHints } = useKeyboardShortcuts()
 .hint-title {
   font-size: 12px;
   font-weight: 600;
-  color: #94a3b8;
+  color: #64748b;
   margin-bottom: 8px;
   text-transform: uppercase;
   letter-spacing: 0.5px;

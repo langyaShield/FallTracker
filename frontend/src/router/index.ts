@@ -100,6 +100,12 @@ const routes: RouteRecordRaw[] = [
       },
     ],
   },
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'not-found',
+    component: () => import('@/pages/NotFoundPage.vue'),
+    meta: { title: '页面不存在' },
+  },
 ]
 
 const router = createRouter({

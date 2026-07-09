@@ -117,7 +117,7 @@ const handleBack = () => {
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: #94a3b8;
+  color: #64748b;
   margin-bottom: 2px;
 }
 

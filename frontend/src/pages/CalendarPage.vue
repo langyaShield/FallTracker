@@ -113,8 +113,8 @@ const fetchDeliveries = async () => {
           position: d.position,
         }
       }))
-  } catch {
-    // ignore
+  } catch (e) {
+    console.warn('日历投递数据加载失败', e)
   }
 }
 
@@ -279,9 +279,9 @@ onMounted(() => {
   <div class="calendar-page">
     <PageHeader title="日历视图">
       <el-button-group>
-        <el-button :icon="ArrowLeft" @click="prevMonth" />
+        <el-button :icon="ArrowLeft" aria-label="上一月" @click="prevMonth" />
         <el-button>{{ currentDate.getFullYear() }}年{{ currentDate.getMonth() + 1 }}月</el-button>
-        <el-button :icon="ArrowRight" @click="nextMonth" />
+        <el-button :icon="ArrowRight" aria-label="下一月" @click="nextMonth" />
       </el-button-group>
       <el-button v-if="!isCurrentMonth" :icon="Calendar" @click="goToToday">今天</el-button>
       <el-button-group>

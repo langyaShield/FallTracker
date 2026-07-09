@@ -28,15 +28,15 @@ class InviteCode(Base):
 class Delivery(Base):
     __tablename__ = "deliveries"
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     company = Column(String(100), nullable=False)
     position = Column(String(100), nullable=False)
     jd_text = Column(Text)
     link = Column(String(500))
-    status = Column(String(20), default="pending")
+    status = Column(String(20), default="pending", index=True)
     resume_id = Column(Integer, ForeignKey("resumes.id", ondelete="SET NULL"))
     tags = Column(JSON, default=list)
-    deadline = Column(DateTime, nullable=True)
+    deadline = Column(DateTime, nullable=True, index=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -44,7 +44,7 @@ class Delivery(Base):
 class InterviewEvent(Base):
     __tablename__ = "interview_events"
     id = Column(Integer, primary_key=True, index=True)
-    delivery_id = Column(Integer, ForeignKey("deliveries.id", ondelete="CASCADE"), nullable=False)
+    delivery_id = Column(Integer, ForeignKey("deliveries.id", ondelete="CASCADE"), nullable=False, index=True)
     event_type = Column(String(20))
     round_number = Column(Integer, default=1)
     scheduled_at = Column(DateTime, nullable=False)
@@ -59,7 +59,7 @@ class InterviewEvent(Base):
 class Resume(Base):
     __tablename__ = "resumes"
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(100), nullable=False)
     file_path = Column(String(500), nullable=False)
     file_size = Column(Integer, default=0)  # 文件大小（字节）
@@ -74,7 +74,7 @@ class Review(Base):
     __tablename__ = "reviews"
     id = Column(Integer, primary_key=True, index=True)
     delivery_id = Column(Integer, ForeignKey("deliveries.id", ondelete="CASCADE"), nullable=False)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     raw_notes = Column(Text, nullable=False)
     structured_qa = Column(JSON)
     tags = Column(JSON, default=list)
@@ -137,7 +137,7 @@ class CrawlerConfig(Base):
     __tablename__ = "crawler_configs"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     name = Column(String(100), nullable=False)
     url = Column(String(500), nullable=False)
     css_selector = Column(String(200), default="")          # DEPRECATED: kept for backward compat, no longer used

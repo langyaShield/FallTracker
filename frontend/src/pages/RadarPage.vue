@@ -69,8 +69,8 @@ async function fetchTemplates() {
   try {
     const res = await api.get('/radar/templates')
     templates.value = res.data || []
-  } catch {
-    // 非关键功能，静默失败
+  } catch (e) {
+    console.warn('模板加载失败', e)
   }
 }
 
@@ -923,7 +923,7 @@ onMounted(() => {
 }
 
 .detail-label {
-  color: #94a3b8;
+  color: #64748b;
   white-space: nowrap;
   min-width: 64px;
 }
@@ -947,7 +947,7 @@ onMounted(() => {
 }
 
 .time-value {
-  color: #94a3b8;
+  color: #64748b;
   font-size: 12px;
 }
 
@@ -985,7 +985,7 @@ onMounted(() => {
 
 .advanced-collapse :deep(.el-collapse-item__header) {
   font-size: 13px;
-  color: #94a3b8;
+  color: #64748b;
   border-bottom: none;
   height: 36px;
   line-height: 36px;
@@ -1058,7 +1058,7 @@ onMounted(() => {
 .form-tip {
   display: block;
   font-size: 12px;
-  color: #94a3b8;
+  color: #64748b;
   margin-top: 4px;
   line-height: 1.4;
 }
@@ -1082,7 +1082,7 @@ onMounted(() => {
   line-height: 1.4;
 }
 
-.no-email { color: #94a3b8; }
+.no-email { color: #64748b; }
 
 .detail-section { margin-bottom: 20px; }
 .detail-section h4 {

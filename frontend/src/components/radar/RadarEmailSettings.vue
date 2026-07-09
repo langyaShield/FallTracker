@@ -200,7 +200,7 @@ defineExpose({ fetchEmailSettings })
 .form-tip {
   display: block;
   font-size: 12px;
-  color: #94a3b8;
+  color: #64748b;
   margin-top: 4px;
   line-height: 1.4;
 }

@@ -74,6 +74,27 @@ def _add_column_if_not_exists(table_name: str, column_name: str, column_type: st
         conn.close()
 
 
+def _create_index_if_not_exists(table_name: str, column_name: str):
+    """Create an index on a column if it doesn't exist yet (SQLite-safe, idempotent)."""
+    if not all(c.isalnum() or c == '_' for c in table_name):
+        raise ValueError(f"Invalid table name: {table_name}")
+    if not all(c.isalnum() or c == '_' for c in column_name):
+        raise ValueError(f"Invalid column name: {column_name}")
+    index_name = f"ix_{table_name}_{column_name}"
+    db_path = settings.DATABASE_URL.replace("sqlite:///", "")
+    conn = sqlite3.connect(db_path)
+    try:
+        cursor = conn.cursor()
+        cursor.execute(f"PRAGMA index_list({table_name})")
+        existing = {row[1] for row in cursor.fetchall()}
+        if index_name not in existing:
+            cursor.execute(f"CREATE INDEX {index_name} ON {table_name} ({column_name})")
+            conn.commit()
+            logger.info("Created index %s on %s(%s)", index_name, table_name, column_name)
+    finally:
+        conn.close()
+
+
 Base.metadata.create_all(bind=engine)
 
 # Patch new columns into existing tables (safe to run multiple times)
@@ -102,6 +123,15 @@ _add_column_if_not_exists("crawler_configs", "last_error", "VARCHAR(500)")
 _add_column_if_not_exists("crawler_configs", "consecutive_failures", "INTEGER")
 _add_column_if_not_exists("crawler_results", "matched_items", "TEXT")
 _add_column_if_not_exists("user_settings", "email_template", "TEXT")
+
+# Ensure indexes exist on high-frequency filter columns (idempotent)
+_create_index_if_not_exists("deliveries", "user_id")
+_create_index_if_not_exists("deliveries", "status")
+_create_index_if_not_exists("deliveries", "deadline")
+_create_index_if_not_exists("interview_events", "delivery_id")
+_create_index_if_not_exists("resumes", "user_id")
+_create_index_if_not_exists("reviews", "user_id")
+_create_index_if_not_exists("crawler_configs", "user_id")
 
 # Security: block startup with default/weak SECRET_KEY
 _BLOCKED_SECRETS = {

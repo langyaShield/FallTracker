@@ -6,7 +6,7 @@ import { Plus, Search, Download, Upload, Delete, Grid, List, ArrowDown } from '@
 import api from '@/lib/api'
 import { useUndoDelete } from '@/composables/useUndoDelete'
 import { STATUS_COLUMNS, STATUS_LABEL_MAP, STATUS_COLOR_MAP } from '@/lib/constants'
-import { formatDateTime } from '@/lib/format'
+import { formatDateTime, getDeadlineUrgency } from '@/lib/format'
 import { extractErrorMessage } from '@/lib/error'
 import PageHeader from '@/components/PageHeader.vue'
 import BatchImportDialog from '@/components/BatchImportDialog.vue'
@@ -341,18 +341,7 @@ const handleImported = () => {
 }
 
 // --- Deadline urgency ---
-const getDeadlineUrgency = (deadline?: string | null): 'urgent' | 'warning' | 'expired' | null => {
-  if (!deadline) return null
-  const now = Date.now()
-  const dl = new Date(deadline).getTime()
-  const diff = dl - now
-  if (diff < 0) return 'expired'
-  if (diff <= 24 * 60 * 60 * 1000) return 'urgent'
-  if (diff <= 48 * 60 * 60 * 1000) return 'warning'
-  return null
-}
-
-const urgencyBorderColor = (urgency: string | null): string => {
+const urgencyBorderColor = (urgency: string): string => {
   if (urgency === 'expired') return '#991b1b'
   if (urgency === 'urgent') return '#ef4444'
   if (urgency === 'warning') return '#f97316'
@@ -448,8 +437,8 @@ const fetchResumes = async () => {
   try {
     const res = await api.get('/resumes')
     resumes.value = res.data?.items || []
-  } catch {
-    // ignore
+  } catch (e) {
+    console.warn('简历列表加载失败', e)
   }
 }
 
@@ -545,8 +534,8 @@ onMounted(() => {
         <el-button v-if="hasActiveFilters" size="small" @click="clearFilters">清除筛选</el-button>
         <span class="filter-count">匹配 {{ filteredDeliveries.length }} 条</span>
         <el-button-group class="view-toggle">
-          <el-button :type="viewMode === 'kanban' ? 'primary' : 'default'" :icon="Grid" size="small" @click="viewMode = 'kanban'" />
-          <el-button :type="viewMode === 'list' ? 'primary' : 'default'" :icon="List" size="small" @click="viewMode = 'list'" />
+          <el-button :type="viewMode === 'kanban' ? 'primary' : 'default'" :icon="Grid" size="small" aria-label="看板视图" @click="viewMode = 'kanban'" />
+          <el-button :type="viewMode === 'list' ? 'primary' : 'default'" :icon="List" size="small" aria-label="列表视图" @click="viewMode = 'list'" />
         </el-button-group>
         <el-button
           v-if="viewMode === 'kanban'"
@@ -1078,7 +1067,7 @@ onMounted(() => {
 
 .card-time {
   font-size: 12px;
-  color: #94a3b8;
+  color: #64748b;
   margin-bottom: 8px;
 }
 
@@ -1185,7 +1174,7 @@ onMounted(() => {
 }
 
 .column-collapse-icon {
-  color: #94a3b8;
+  color: #64748b;
   font-size: 14px;
   transition: transform 0.2s;
   cursor: pointer;
@@ -1205,7 +1194,7 @@ onMounted(() => {
   border-radius: 50%;
   border: 1.5px solid #cbd5e1;
   background: transparent;
-  color: #94a3b8;
+  color: #64748b;
   font-size: 15px;
   line-height: 1;
   cursor: pointer;
@@ -1263,7 +1252,7 @@ onMounted(() => {
 
 .empty-board-hint {
   font-size: 14px;
-  color: #94a3b8;
+  color: #64748b;
   margin: 0 0 8px 0;
 }
 

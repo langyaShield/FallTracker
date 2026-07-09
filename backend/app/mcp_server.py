@@ -21,11 +21,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import json
 import logging
+import threading
 from collections import defaultdict
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Optional
 
 from fastapi import HTTPException
@@ -547,7 +547,7 @@ async def list_upcoming_events(ctx: Context, days: int = 30, limit: int = 50) ->
         user, db = _get_user(ctx)
         try:
             now = datetime.now(timezone.utc)
-            horizon = now + __import__("datetime").timedelta(days=days)
+            horizon = now + timedelta(days=days)
             rows = (
                 db.query(InterviewEvent, Delivery.company, Delivery.position)
                 .join(Delivery, InterviewEvent.delivery_id == Delivery.id)
@@ -915,7 +915,7 @@ async def retrigger_resume_ocr(ctx: Context, resume_id: int) -> dict:
             db.commit()
             # Run OCR in background thread so the tool returns immediately
             from app.routers.resumes import _run_ocr_background
-            __import__("threading").Thread(
+            threading.Thread(
                 target=_run_ocr_background, args=(r.id, r.file_path), daemon=True
             ).start()
             return {"success": True, "message": "已重新触发 OCR"}
@@ -952,9 +952,6 @@ async def list_reviews(ctx: Context, limit: int = 50) -> dict:
                         "id": r.id,
                         "delivery_id": r.delivery_id,
                         "raw_notes": r.raw_notes,
-                        "structured_qa": r.structured_qa,
-                        "tags": r.tags or [],
-                        "reflection": r.reflection,
                         "created_at": _iso(r.created_at),
                         "updated_at": _iso(r.updated_at),
                     }
@@ -972,7 +969,6 @@ async def create_review(
     ctx: Context,
     delivery_id: int,
     raw_notes: str,
-    tags: Optional[list[str]] = None,
 ) -> dict:
     """Create an interview review for a delivery."""
 
@@ -986,7 +982,6 @@ async def create_review(
                 delivery_id=delivery_id,
                 user_id=user.id,
                 raw_notes=raw_notes,
-                tags=tags or [],
             )
             db.add(r)
             db.commit()
@@ -1007,9 +1002,6 @@ async def update_review(
     ctx: Context,
     review_id: int,
     raw_notes: Optional[str] = None,
-    structured_qa: Optional[dict] = None,
-    tags: Optional[list[str]] = None,
-    reflection: Optional[str] = None,
 ) -> dict:
     """Update an interview review."""
 
@@ -1021,12 +1013,6 @@ async def update_review(
                 return {"error": "复盘不存在"}
             if raw_notes is not None:
                 r.raw_notes = raw_notes
-            if structured_qa is not None:
-                r.structured_qa = structured_qa
-            if tags is not None:
-                r.tags = tags
-            if reflection is not None:
-                r.reflection = reflection
             db.commit()
             db.refresh(r)
             return {"success": True, "id": r.id, "message": "复盘更新成功"}
@@ -1034,77 +1020,6 @@ async def update_review(
             db.rollback()
             logger.exception("MCP update_review failed")
             return {"error": "复盘更新失败"}
-        finally:
-            db.close()
-
-    return await asyncio.to_thread(sync)
-
-
-@mcp.tool()
-async def generate_structured_review(ctx: Context, review_id: int) -> dict:
-    """Use the configured LLM to generate structured QA and reflection for a review."""
-
-    def sync():
-        user, db = _get_user(ctx)
-        try:
-            r = db.query(Review).filter(Review.id == review_id, Review.user_id == user.id).first()
-            if not r:
-                return {"error": "复盘不存在"}
-            from app.routers.settings import get_llm_config
-            import httpx
-
-            llm = get_llm_config(db, user.id)
-            if not llm["llm_api_key"]:
-                return {"error": "LLM API key 未配置"}
-            safe_notes = r.raw_notes[:3000].replace("```", "'''").replace("<|", "< |")
-            prompt = f"""你是一位资深技术面试官和职业导师。请根据以下面试复盘笔记，提取核心面试问答，补全标准答案，并给出面试表现反思。
-
-面试笔记：
-{safe_notes}
-
-请按以下 JSON 格式输出：
-{{
-  "qa_pairs": [
-    {{"question": "问题", "answer": "标准答案", "leetcode_link": "相关LeetCode题链接(如有)"}}
-  ],
-  "reflection": "对本次面试表现的反思与改进建议"
-}}"""
-            payload = {
-                "model": llm["llm_model"],
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.3,
-            }
-            headers = {
-                "Authorization": f"Bearer {llm['llm_api_key']}",
-                "Content-Type": "application/json",
-            }
-            with httpx.Client(timeout=120.0) as client:
-                resp = client.post(
-                    f"{llm['llm_api_base'].rstrip('/')}/chat/completions",
-                    json=payload,
-                    headers=headers,
-                )
-                resp.raise_for_status()
-                content = resp.json()["choices"][0]["message"]["content"]
-                # Try to extract JSON from markdown code block
-                if "```json" in content:
-                    content = content.split("```json")[1].split("```")[0]
-                elif "```" in content:
-                    content = content.split("```")[1].split("```")[0]
-                data = json.loads(content.strip())
-                r.structured_qa = data.get("qa_pairs")
-                r.reflection = data.get("reflection")
-                db.commit()
-                db.refresh(r)
-                return {
-                    "success": True,
-                    "structured_qa": r.structured_qa,
-                    "reflection": r.reflection,
-                }
-        except Exception:
-            db.rollback()
-            logger.exception("MCP generate_structured_review failed")
-            return {"error": "结构化生成失败"}
         finally:
             db.close()
 
@@ -1241,7 +1156,7 @@ async def get_statistics_overview(ctx: Context) -> dict:
                 return round(num / den * 100, 1) if den > 0 else 0
 
             now = datetime.now(timezone.utc)
-            week_start = now - __import__("datetime").timedelta(days=now.weekday())
+            week_start = now - timedelta(days=now.weekday())
             week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
 
             weekly_new = (
@@ -1263,7 +1178,7 @@ async def get_statistics_overview(ctx: Context) -> dict:
                 .scalar()
                 or 0
             )
-            stale_cutoff = now - __import__("datetime").timedelta(days=7)
+            stale_cutoff = now - timedelta(days=7)
             stale_count = (
                 db.query(func.count(Delivery.id))
                 .filter(

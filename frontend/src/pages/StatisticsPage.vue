@@ -486,7 +486,7 @@ onMounted(fetchAll)
 
 .card-subtitle {
   font-size: 12px;
-  color: #94a3b8;
+  color: #64748b;
   font-weight: 400;
 }
 
@@ -527,7 +527,7 @@ onMounted(fetchAll)
 
 .days-normal {
   font-size: 12px;
-  color: #94a3b8;
+  color: #64748b;
 }
 
 /* ─── 响应式 ─── */

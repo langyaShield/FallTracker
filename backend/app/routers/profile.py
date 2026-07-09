@@ -1,7 +1,7 @@
 """个人信息库：键值对 + 分组的灵活存储，支持基本信息、教育经历、工作经历。"""
 from collections import defaultdict
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
@@ -15,6 +15,7 @@ from app.schemas import (
     ProfileFieldUpdate,
     ProfileGroupOut,
 )
+from app.ratelimit import limiter
 
 router = APIRouter(prefix="/profile", tags=["profile"])
 
@@ -35,7 +36,9 @@ def _group_fields(fields: list[ProfileField]) -> list[ProfileGroupOut]:
 
 
 @router.get("", response_model=list[ProfileCategoryOut])
+@limiter.limit("60/minute")
 def get_profile(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -62,8 +65,10 @@ def get_profile(
 
 
 @router.put("/{category}", response_model=ProfileCategoryOut)
+@limiter.limit("30/minute")
 def batch_save_category(
     category: str,
+    request: Request,
     data: ProfileBatchSave,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -124,7 +129,9 @@ def batch_save_category(
 
 
 @router.post("/field", response_model=ProfileFieldOut)
+@limiter.limit("30/minute")
 def create_field(
+    request: Request,
     data: ProfileFieldCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -145,8 +152,10 @@ def create_field(
 
 
 @router.put("/field/{field_id}", response_model=ProfileFieldOut)
+@limiter.limit("30/minute")
 def update_field(
     field_id: int,
+    request: Request,
     data: ProfileFieldUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -167,8 +176,10 @@ def update_field(
 
 
 @router.delete("/field/{field_id}")
+@limiter.limit("30/minute")
 def delete_field(
     field_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -186,9 +197,11 @@ def delete_field(
 
 
 @router.delete("/group/{category}/{group_index}")
+@limiter.limit("30/minute")
 def delete_group(
     category: str,
     group_index: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

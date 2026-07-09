@@ -12,19 +12,22 @@ from __future__ import annotations
 
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import Notification, User
 from app.schemas import NotificationListOut, NotificationMarkRead, NotificationOut
+from app.ratelimit import limiter
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
 
 @router.get("", response_model=NotificationListOut)
+@limiter.limit("60/minute")
 def list_notifications(
+    request: Request,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     only_unread: bool = Query(False, description="仅返回未读"),
@@ -58,7 +61,9 @@ def list_notifications(
 
 
 @router.get("/unread-count")
+@limiter.limit("60/minute")
 def get_unread_count(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -72,7 +77,9 @@ def get_unread_count(
 
 
 @router.post("/mark-read")
+@limiter.limit("30/minute")
 def mark_read(
+    request: Request,
     body: NotificationMarkRead,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -94,7 +101,9 @@ def mark_read(
 
 
 @router.delete("/batch")
+@limiter.limit("30/minute")
 def batch_delete_notifications(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -109,8 +118,10 @@ def batch_delete_notifications(
 
 
 @router.delete("/{notification_id}")
+@limiter.limit("30/minute")
 def delete_notification(
     notification_id: int,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

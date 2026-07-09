@@ -274,7 +274,7 @@ const close = () => {
   min-width: 50px;
 }
 .mapping-arrow {
-  color: #94a3b8;
+  color: #64748b;
   font-size: 14px;
 }
 .mapping-select {

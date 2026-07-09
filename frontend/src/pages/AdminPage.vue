@@ -353,6 +353,7 @@ onMounted(() => {
               size="small"
               text
               :icon="CopyDocument"
+              aria-label="复制邀请码"
               @click="copyCode(row.code)"
               style="margin-left: 4px"
             />
@@ -431,7 +432,7 @@ onMounted(() => {
 
 .stat-label {
   font-size: 13px;
-  color: #94a3b8;
+  color: #64748b;
 }
 
 .stat-active .stat-value {
@@ -507,7 +508,7 @@ onMounted(() => {
 
 .text-muted {
   font-size: 12px;
-  color: #94a3b8;
+  color: #64748b;
 }
 
 @media (max-width: 768px) {

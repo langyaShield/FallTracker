@@ -16,7 +16,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 def register(request: Request, user: UserCreate, db: Session = Depends(get_db)):
     existing = db.query(User).filter(User.username == user.username).first()
     if existing:
-        raise HTTPException(status_code=400, detail="Username already registered")
+        raise HTTPException(status_code=400, detail="用户名已被注册")
 
     # 校验邀请码（加行级锁防止并发重复使用）
     invite = db.query(InviteCode).filter(InviteCode.code == user.invite_code).with_for_update().first()
@@ -47,6 +47,14 @@ def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db
     if not user or not verify_password(form_data.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password")
     access_token = create_access_token(data={"sub": str(user.id)})
+    return {"access_token": access_token, "token_type": "bearer"}
+
+
+@router.post("/refresh", response_model=Token)
+@limiter.limit("30/minute")
+def refresh_token(request: Request, current_user: User = Depends(get_current_user)):
+    """用现有有效 token 换取新 token，延长登录态。"""
+    access_token = create_access_token(data={"sub": str(current_user.id)})
     return {"access_token": access_token, "token_type": "bearer"}
 
 

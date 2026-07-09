@@ -149,6 +149,7 @@ const activeWorkGroup = ref(0)
               link
               type="primary"
               :icon="CopyDocument"
+              aria-label="复制字段"
               @click="copyField(field)"
             />
           </div>
@@ -201,6 +202,7 @@ const activeWorkGroup = ref(0)
                 link
                 type="primary"
                 :icon="CopyDocument"
+                aria-label="复制字段"
                 @click="copyField(field)"
               />
             </div>
@@ -254,6 +256,7 @@ const activeWorkGroup = ref(0)
                 link
                 type="primary"
                 :icon="CopyDocument"
+                aria-label="复制字段"
                 @click="copyField(field)"
               />
             </div>
@@ -324,7 +327,7 @@ const activeWorkGroup = ref(0)
 
 .field-label {
   font-size: 12px;
-  color: #94a3b8;
+  color: #64748b;
 }
 
 .field-value {
@@ -350,7 +353,7 @@ const activeWorkGroup = ref(0)
 
 .empty-hint {
   font-size: 13px;
-  color: #94a3b8;
+  color: #64748b;
   padding: 12px 0;
   text-align: center;
 }
@@ -360,7 +363,7 @@ const activeWorkGroup = ref(0)
   padding-top: 16px;
   border-top: 1px solid #e2e8f0;
   font-size: 12px;
-  color: #94a3b8;
+  color: #64748b;
   text-align: center;
 }
 

@@ -233,8 +233,8 @@ onMounted(() => {
             </div>
           </div>
           <div class="card-actions" @click.stop>
-            <el-button text size="small" :icon="Edit" @click="openEditDialog(bookmark)" />
-            <el-button text size="small" type="danger" :icon="Delete" @click="deleteBookmark(bookmark)" />
+            <el-button text size="small" :icon="Edit" aria-label="编辑书签" @click="openEditDialog(bookmark)" />
+            <el-button text size="small" type="danger" :icon="Delete" aria-label="删除书签" @click="deleteBookmark(bookmark)" />
           </div>
         </div>
       </div>
@@ -390,7 +390,7 @@ onMounted(() => {
 .fallback-icon {
   width: 20px;
   height: 20px;
-  color: #94a3b8;
+  color: #64748b;
   position: absolute;
   z-index: -1;
 }
@@ -411,7 +411,7 @@ onMounted(() => {
 
 .bookmark-url {
   font-size: 12px;
-  color: #94a3b8;
+  color: #64748b;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

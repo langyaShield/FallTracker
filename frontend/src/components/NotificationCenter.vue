@@ -155,7 +155,7 @@ onUnmounted(() => {
   >
     <template #reference>
       <el-badge :value="badgeValue" :hidden="!hasUnread" :max="99" class="notif-badge">
-        <el-button text circle size="large" class="notif-bell">
+        <el-button text circle size="large" class="notif-bell" aria-label="通知">
           <el-icon :size="20"><Bell /></el-icon>
         </el-button>
       </el-badge>
@@ -248,7 +248,7 @@ onUnmounted(() => {
 
 .notif-meta {
   font-size: 12px;
-  color: #94a3b8;
+  color: #64748b;
   font-weight: 400;
   margin-left: 8px;
 }
@@ -337,6 +337,6 @@ onUnmounted(() => {
 
 .notif-item-time {
   font-size: 11px;
-  color: #94a3b8;
+  color: #64748b;
 }
 </style>

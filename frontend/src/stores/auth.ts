@@ -56,6 +56,10 @@ export const useAuthStore = defineStore('auth', () => {
         clearToken()
       }
     })
+    window.addEventListener('auth:token-refreshed', ((e: CustomEvent) => {
+      token.value = e.detail
+      localStorage.setItem('token', e.detail)
+    }) as EventListener)
     unauthorizedListenerInstalled = true
   }
 

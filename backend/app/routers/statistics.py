@@ -1,12 +1,13 @@
 from datetime import datetime, timedelta, timezone
 from calendar import monthrange
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func, case
 from app.database import get_db
 from app.models import Delivery, InterviewEvent, User
 from app.auth import get_current_user
+from app.ratelimit import limiter
 
 router = APIRouter(prefix="/statistics", tags=["statistics"])
 
@@ -17,7 +18,8 @@ VALID_STATUSES = ["pending", "delivered", "written", "interview", "offer", "reje
 
 
 @router.get("/funnel")
-def funnel(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@limiter.limit("60/minute")
+def funnel(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     result = db.query(Delivery.status, func.count(Delivery.id)).filter(Delivery.user_id == current_user.id).group_by(Delivery.status).all()
     data = {s: 0 for s in VALID_STATUSES}
     for status, count in result:
@@ -27,7 +29,8 @@ def funnel(db: Session = Depends(get_db), current_user: User = Depends(get_curre
 
 
 @router.get("/conversion")
-def conversion(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@limiter.limit("60/minute")
+def conversion(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     result = db.query(Delivery.status, func.count(Delivery.id)).filter(Delivery.user_id == current_user.id).group_by(Delivery.status).all()
     counts = {s: 0 for s in VALID_STATUSES}
     for status, count in result:
@@ -45,7 +48,8 @@ def conversion(db: Session = Depends(get_db), current_user: User = Depends(get_c
 
 
 @router.get("/overview")
-def overview(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@limiter.limit("60/minute")
+def overview(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """总览数据：核心KPI + 本周动态 + 待跟进数"""
     now = datetime.now(timezone.utc)
 
@@ -120,7 +124,9 @@ def _subtract_months(dt: datetime, months: int) -> datetime:
 
 
 @router.get("/timeline")
+@limiter.limit("60/minute")
 def timeline(
+    request: Request,
     months: int = Query(default=6, ge=1, le=24),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -158,7 +164,9 @@ def timeline(
 
 
 @router.get("/company-progress")
+@limiter.limit("60/minute")
 def company_progress(
+    request: Request,
     limit: int = Query(default=20, ge=1, le=100),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -200,7 +208,8 @@ def company_progress(
 
 
 @router.get("/interview-stats")
-def interview_stats(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@limiter.limit("60/minute")
+def interview_stats(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """面试统计：类型分布、轮次分布、即将面试数"""
     now = datetime.now(timezone.utc)
 

@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { Plus, Edit, Delete, CopyDocument, Link } from '@element-plus/icons-vue'
+import { Plus, Edit, Delete, Link } from '@element-plus/icons-vue'
 import api from '@/lib/api'
 import { useUndoDelete } from '@/composables/useUndoDelete'
 import { extractErrorMessage } from '@/lib/error'
@@ -12,18 +12,17 @@ interface Review {
   id: number
   delivery_id: number
   raw_notes: string
-  structured_qa?: any
-  tags?: string[]
-  reflection?: string
   created_at: string
 }
 
 const reviews = ref<Review[]>([])
+const total = ref(0)
+const currentPage = ref(1)
+const pageSize = ref(20)
 const loading = ref(false)
 const dialogVisible = ref(false)
 const editing = ref<Partial<Review>>({})
 const deliveries = ref<{ id: number; company: string; position: string }[]>([])
-const generating = ref(false)
 const router = useRouter()
 
 // 删除撤销
@@ -42,76 +41,12 @@ const getDelivery = (deliveryId: number) => {
   return deliveries.value.find((d) => d.id === deliveryId)
 }
 
-interface ParsedQA {
-  question: string
-  answer: string
-  score?: string | number
-}
-
-const parseStructuredQA = (data: any): { items: ParsedQA[]; isObject: boolean; raw: any } => {
-  if (!data) return { items: [], isObject: false, raw: data }
-
-  // 数组形式
-  if (Array.isArray(data)) {
-    const items = data
-      .map((item: any) => {
-        if (typeof item === 'string') {
-          return { question: item, answer: '' }
-        }
-        if (typeof item === 'object' && item !== null) {
-          const q = item.question || item.q || item.Question || item.问题 || '未命名问题'
-          const a = item.answer || item.a || item.Answer || item.答案 || item.content || ''
-          const s = item.score || item.rating || item.评分 || item.score || undefined
-          return { question: q, answer: a, score: s }
-        }
-        return { question: String(item), answer: '' }
-      })
-      .filter((item) => item.question || item.answer)
-    return { items, isObject: false, raw: data }
-  }
-
-  // 对象形式：键值对
-  if (typeof data === 'object' && data !== null) {
-    const items = Object.entries(data).map(([key, value]) => ({
-      question: key,
-      answer: typeof value === 'string' ? value : JSON.stringify(value, null, 2),
-    }))
-    return { items, isObject: true, raw: data }
-  }
-
-  // 字符串形式，尝试解析
-  if (typeof data === 'string') {
-    try {
-      const parsed = JSON.parse(data)
-      return parseStructuredQA(parsed)
-    } catch {
-      return { items: [{ question: '内容', answer: data }], isObject: false, raw: data }
-    }
-  }
-
-  return { items: [], isObject: false, raw: data }
-}
-
-const copyToClipboard = async (text: string) => {
-  try {
-    await navigator.clipboard.writeText(text)
-    ElMessage.success('已复制到剪贴板')
-  } catch {
-    const textarea = document.createElement('textarea')
-    textarea.value = text
-    document.body.appendChild(textarea)
-    textarea.select()
-    document.execCommand('copy')
-    document.body.removeChild(textarea)
-    ElMessage.success('已复制到剪贴板')
-  }
-}
-
 const fetchReviews = async () => {
   loading.value = true
   try {
-    const res = await api.get('/reviews')
-    reviews.value = res.data || []
+    const res = await api.get('/reviews', { params: { limit: pageSize.value, offset: (currentPage.value - 1) * pageSize.value } })
+    reviews.value = res.data?.items || []
+    total.value = res.data?.total || 0
   } catch (e: unknown) {
     ElMessage.error(extractErrorMessage(e, '获取复盘失败'))
   } finally {
@@ -123,8 +58,8 @@ const fetchDeliveries = async () => {
   try {
     const res = await api.get('/deliveries')
     deliveries.value = (res.data || []).map((d: any) => ({ id: d.id, company: d.company, position: d.position }))
-  } catch {
-    // ignore
+  } catch (e) {
+    console.warn('投递列表加载失败', e)
   }
 }
 
@@ -154,19 +89,6 @@ const saveReview = async () => {
     fetchReviews()
   } catch (e: unknown) {
     ElMessage.error(extractErrorMessage(e, '保存失败'))
-  }
-}
-
-const generateStructured = async (id: number) => {
-  generating.value = true
-  try {
-    await api.post(`/reviews/${id}/generate`)
-    ElMessage.success('生成成功')
-    fetchReviews()
-  } catch (e: unknown) {
-    ElMessage.error(extractErrorMessage(e, '生成失败'))
-  } finally {
-    generating.value = false
   }
 }
 
@@ -202,52 +124,27 @@ onMounted(() => {
           </div>
           <div class="review-actions">
             <el-button text size="small" :icon="Link" @click="router.push(`/delivery/${review.delivery_id}`)">投递详情</el-button>
-            <el-button v-if="!review.structured_qa" type="primary" text size="small" :loading="generating" @click="generateStructured(review.id)">一键生成</el-button>
-            <el-button text size="small" :icon="Edit" @click="openEdit(review)" />
-            <el-button text size="small" type="danger" :icon="Delete" @click="deleteReview(review)" />
+            <el-button text size="small" :icon="Edit" aria-label="编辑复盘" @click="openEdit(review)" />
+            <el-button text size="small" type="danger" :icon="Delete" aria-label="删除复盘" @click="deleteReview(review)" />
           </div>
-        </div>
-        <div class="review-tags" v-if="review.tags?.length">
-          <el-tag v-for="tag in review.tags" :key="tag" size="small">{{ tag }}</el-tag>
         </div>
         <div class="review-section">
           <div class="section-title">粗表记录</div>
           <pre class="review-content">{{ review.raw_notes }}</pre>
         </div>
-        <div v-if="review.structured_qa" class="review-section">
-          <div class="section-title">
-            规范表
-            <el-button text size="small" :icon="CopyDocument" @click="copyToClipboard(JSON.stringify(review.structured_qa, null, 2))">复制</el-button>
-          </div>
-          <div class="qa-cards">
-            <div
-              v-for="(item, idx) in parseStructuredQA(review.structured_qa).items"
-              :key="idx"
-              class="qa-card"
-            >
-              <div class="qa-question">
-                <span class="qa-index">Q{{ idx + 1 }}</span>
-                {{ item.question }}
-              </div>
-              <div v-if="item.score !== undefined" class="qa-score">评分：{{ item.score }}</div>
-              <div class="qa-answer">{{ item.answer || '（未填写答案）' }}</div>
-            </div>
-            <div v-if="parseStructuredQA(review.structured_qa).items.length === 0" class="review-content structured">
-              {{ JSON.stringify(review.structured_qa, null, 2) }}
-            </div>
-          </div>
-        </div>
-        <div v-if="review.reflection" class="review-section">
-          <div class="section-title">
-            反思
-            <el-button text size="small" :icon="CopyDocument" @click="copyToClipboard(review.reflection)">复制</el-button>
-          </div>
-          <div class="review-content">{{ review.reflection }}</div>
-        </div>
       </el-card>
       <el-empty v-if="displayedReviews.length === 0" description="还没有面试复盘记录">
         <el-button type="primary" :icon="Plus" @click="openAdd">新建复盘</el-button>
       </el-empty>
+      <el-pagination
+        v-if="total > pageSize"
+        v-model:current-page="currentPage"
+        :page-size="pageSize"
+        :total="total"
+        layout="prev, pager, next"
+        class="review-pagination"
+        @current-change="fetchReviews"
+      />
     </div>
 
     <el-dialog v-model="dialogVisible" :title="editing.id ? '编辑复盘' : '新建复盘'" width="600px">
@@ -315,13 +212,6 @@ onMounted(() => {
   gap: 8px;
 }
 
-.review-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 12px;
-}
-
 .review-section {
   margin-bottom: 12px;
 }
@@ -333,9 +223,6 @@ onMounted(() => {
   margin-bottom: 6px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
 }
 
 .review-content {
@@ -347,55 +234,6 @@ onMounted(() => {
   white-space: pre-wrap;
   word-break: break-word;
   margin: 0;
-}
-
-.review-content.structured {
-  font-family: monospace;
-  font-size: 13px;
-}
-
-.qa-cards {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.qa-card {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 12px;
-}
-
-.qa-question {
-  font-weight: 600;
-  color: #1e3a5f;
-  margin-bottom: 6px;
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-
-.qa-index {
-  background: #1e3a5f;
-  color: #fff;
-  font-size: 11px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  flex-shrink: 0;
-}
-
-.qa-score {
-  font-size: 12px;
-  color: #f59e0b;
-  margin-bottom: 6px;
-}
-
-.qa-answer {
-  font-size: 14px;
-  color: #475569;
-  line-height: 1.6;
-  white-space: pre-wrap;
 }
 
 @media (max-width: 768px) {
