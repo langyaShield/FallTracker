@@ -51,6 +51,8 @@ services:
       # Python optimization
       - PYTHONDONTWRITEBYTECODE=1
       - PYTHONUNBUFFERED=1
+      # Security: disable API docs in production (P0-2.1)
+      - DEBUG=false
 
     # Logging: keep it lean
     logging:

@@ -1,7 +1,7 @@
 import re
 import sqlite3, os, logging
 from contextlib import AsyncExitStack, asynccontextmanager
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -214,7 +214,16 @@ async def lifespan(app: FastAPI):
         scheduler.shutdown(wait=False)
 
 
-app = FastAPI(title="FallTracker API", version="1.0.0", lifespan=lifespan)
+# P0-2.1: 生产环境关闭 API 文档，防止端点结构泄露
+_debug = settings.DEBUG
+app = FastAPI(
+    title="FallTracker API",
+    version="1.0.0",
+    lifespan=lifespan,
+    docs_url="/docs" if _debug else None,
+    redoc_url="/redoc" if _debug else None,
+    openapi_url="/openapi.json" if _debug else None,
+)
 app.state.limiter = limiter
 
 
@@ -257,6 +266,37 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
+# ─────────────────────────────────────────────
+#  Security Headers Middleware (P1-2.4 / P1-2.5)
+# ─────────────────────────────────────────────
+from starlette.middleware.base import BaseHTTPMiddleware
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """添加安全响应头并隐藏服务器信息。"""
+
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        # P1-2.4: 安全响应头
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: https:; "
+            "connect-src 'self';"
+        )
+        # P1-2.5: 隐藏服务器信息，覆盖 uvicorn 默认的 Server header
+        response.headers["Server"] = "FallTracker"
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
+
 # API routers
 app.include_router(auth.router, prefix="/api")
 app.include_router(deliveries.router, prefix="/api")
@@ -274,7 +314,11 @@ app.include_router(bookmarks.router, prefix="/api")
 app.include_router(agent_router.router, prefix="/api")
 
 @app.get("/health")
-def health():
+def health(request: Request):
+    # P2-2.8: 限制健康检查仅允许内网/localhost 访问，防止外部探测服务状态
+    client_host = request.client.host if request.client else ""
+    if client_host not in ("127.0.0.1", "::1", "localhost"):
+        raise HTTPException(status_code=403, detail="Forbidden")
     return {"status": "ok"}
 
 
