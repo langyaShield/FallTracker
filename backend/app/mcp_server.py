@@ -146,6 +146,10 @@ def _get_current_user_sync(token: str, db: Session) -> User:
     user = db.query(User).filter(User.id == user_id_int).first()
     if user is None:
         raise credentials_exception
+    # P2-8: 校验 token 版本
+    token_version = payload.get("ver", 0)
+    if token_version != user.token_version:
+        raise HTTPException(status_code=401, detail="Token 已失效，请重新登录")
     if user.is_disabled:
         raise HTTPException(status_code=403, detail="账户已被禁用，请联系管理员")
     return user

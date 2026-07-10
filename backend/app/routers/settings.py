@@ -110,6 +110,22 @@ def test_llm_settings(
     if not api_base:
         raise HTTPException(status_code=400, detail="API Base URL 未配置，请先保存 LLM 配置")
 
+    # P1-3: SSRF 防护 — 校验 api_base 不指向内网地址
+    from urllib.parse import urlparse
+    import ipaddress, socket
+    parsed = urlparse(api_base)
+    hostname = parsed.hostname or ""
+    _blocked = {"localhost", "127.0.0.1", "0.0.0.0", "169.254.169.254", "::1"}
+    if hostname.lower() in _blocked:
+        raise HTTPException(status_code=400, detail="不允许使用内网地址作为 API Base URL")
+    try:
+        resolved = socket.gethostbyname(hostname)
+        ip = ipaddress.ip_address(resolved)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+            raise HTTPException(status_code=400, detail="不允许使用内网地址作为 API Base URL")
+    except (socket.gaierror, ValueError):
+        pass
+
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -260,12 +276,15 @@ def test_email_settings(
     try:
         _send_test_email(server, port, username, password, from_addr, to_addr)
         return EmailTestResult(success=True, message=f"测试邮件已发送，请检查收件箱（{to_addr}）")
-    except smtplib.SMTPAuthenticationError as e:
-        raise HTTPException(status_code=400, detail=f"邮箱认证失败，请检查账号和授权码/密码：{e}")
-    except smtplib.SMTPConnectError as e:
-        raise HTTPException(status_code=400, detail=f"无法连接到邮箱服务器，请检查服务器地址和端口：{e}")
+    except smtplib.SMTPAuthenticationError:
+        raise HTTPException(status_code=400, detail="邮箱认证失败，请检查账号和授权码/密码")
+    except smtplib.SMTPConnectError:
+        raise HTTPException(status_code=400, detail="无法连接到邮箱服务器，请检查服务器地址和端口")
+    except smtplib.SMTPException:
+        raise HTTPException(status_code=400, detail="发送测试邮件失败，请检查邮箱服务器配置")
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"发送测试邮件失败：{e}")
+        logger.error("Email test failed: %s", e)
+        raise HTTPException(status_code=400, detail="发送测试邮件失败，请稍后重试")
 
 
 # === Tencent Cloud COS Configuration ===

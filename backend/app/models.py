@@ -11,6 +11,7 @@ class User(Base):
     password_hash = Column(String(255), nullable=False)
     is_admin = Column(Boolean, default=False, nullable=False)
     is_disabled = Column(Boolean, default=False, nullable=False)
+    token_version = Column(Integer, default=0, nullable=False)  # P2-8: 密码修改时递增，使旧 token 失效
     created_at = Column(DateTime, server_default=func.now())
 
 

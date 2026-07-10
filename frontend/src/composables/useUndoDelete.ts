@@ -17,7 +17,7 @@ interface PendingItem<T> {
 
 export function useUndoDelete<T>(options: UndoDeleteOptions<T>) {
   const pendingItems = shallowRef<Map<string | number, PendingItem<T>>>(new Map())
-  const duration = options.duration ?? 3000
+  const duration = options.duration ?? 2000
 
   const requestDelete = (item: T) => {
     const id = options.getId(item)

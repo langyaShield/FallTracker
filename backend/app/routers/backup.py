@@ -99,6 +99,31 @@ def _prepare_item(item: dict, model_class, skip_fields: set = None) -> dict:
     return result
 
 
+# 备份数据顶层结构校验
+_EXPECTED_KEYS = {
+    "version", "exported_at",
+    "user_settings",
+    "crawler_configs", "crawler_results",
+    "resumes", "deliveries", "interview_events",
+    "reviews", "notifications", "profile_fields",
+    "bookmarks", "delivery_notes",
+}
+_LIST_KEYS = _EXPECTED_KEYS - {"version", "exported_at", "user_settings"}
+
+
+def _validate_backup_structure(data: dict) -> None:
+    """P2-7: 校验备份数据顶层结构，防止注入恶意字段。"""
+    unknown_keys = set(data.keys()) - _EXPECTED_KEYS
+    if unknown_keys:
+        raise HTTPException(status_code=400, detail=f"备份文件包含未知字段: {', '.join(sorted(unknown_keys))}")
+    for key in _LIST_KEYS:
+        val = data.get(key)
+        if val is not None and not isinstance(val, list):
+            raise HTTPException(status_code=400, detail=f"备份文件格式错误: {key} 应为数组")
+    if not isinstance(data.get("user_settings", {}), dict):
+        raise HTTPException(status_code=400, detail="备份文件格式错误: user_settings 应为对象")
+
+
 # ═══════════════════════════════════════════════════════════════
 #  Data gathering (shared by export & COS upload)
 # ═══════════════════════════════════════════════════════════════
@@ -392,8 +417,10 @@ def _import_backup_data(db: Session, uid: int, data: dict) -> dict:
 # ═══════════════════════════════════════════════════════════════
 
 
+@limiter.limit("10/minute")
 @router.get("/export")
 def export_data(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -447,6 +474,8 @@ def import_data(
 
     if "version" not in data:
         raise HTTPException(status_code=400, detail="无效的备份文件：缺少 version 字段")
+
+    _validate_backup_structure(data)
 
     stats = _import_backup_data(db, current_user.id, data)
     return {"imported": stats}
@@ -518,8 +547,10 @@ def upload_to_cos(
     }
 
 
+@limiter.limit("30/minute")
 @router.get("/cos-list")
 def list_cos_backups(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -548,8 +579,10 @@ def list_cos_backups(
     return files
 
 
+@limiter.limit("10/minute")
 @router.post("/cos-delete")
 def delete_cos_backup(
+    request: Request,
     file_key: str = Form(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -575,8 +608,10 @@ def delete_cos_backup(
     return {"success": True, "file_key": file_key, "message": "备份已删除"}
 
 
+@limiter.limit("10/minute")
 @router.post("/cos-rename")
 def rename_cos_backup(
+    request: Request,
     file_key: str = Form(...),
     new_name: str = Form(...),
     db: Session = Depends(get_db),
@@ -662,6 +697,8 @@ def restore_from_cos(
 
     if "version" not in data:
         raise HTTPException(status_code=400, detail="无效的备份文件：缺少 version 字段")
+
+    _validate_backup_structure(data)
 
     stats = _import_backup_data(db, current_user.id, data)
     return {"source": "cos", "file_key": file_key, "imported": stats}

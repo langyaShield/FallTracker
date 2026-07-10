@@ -39,13 +39,13 @@ def get_password_hash(password):
     return pwd_context.hash(_truncate_password(password))
 
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None, token_version: int = 0):
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
+    to_encode.update({"exp": expire, "ver": token_version})  # P2-8: token 版本号
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
 
@@ -71,6 +71,14 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     user = db.query(User).filter(User.id == user_id_int).first()
     if user is None:
         raise credentials_exception
+    # P2-8: 校验 token 版本 — 密码修改后旧 token 自动失效
+    token_version = payload.get("ver", 0)
+    if token_version != user.token_version:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token 已失效，请重新登录",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if user.is_disabled:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

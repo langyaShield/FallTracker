@@ -47,7 +47,8 @@ router = APIRouter(prefix="/radar", tags=["radar"])
 
 
 @router.get("/configs", response_model=List[CrawlerConfigOut])
-def list_configs(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@limiter.limit("60/minute")
+def list_configs(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """List all crawler configs for the current user."""
     return (
         db.query(CrawlerConfig)
@@ -58,7 +59,9 @@ def list_configs(db: Session = Depends(get_db), current_user: User = Depends(get
 
 
 @router.post("/configs", response_model=CrawlerConfigOut, status_code=201)
+@limiter.limit("10/minute")
 def create_config(
+    request: Request,
     data: CrawlerConfigCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -160,7 +163,9 @@ def run_crawler_manual(
 
 
 @router.get("/configs/{config_id}/results", response_model=List[CrawlerResultOut])
+@limiter.limit("60/minute")
 def list_results(
+    request: Request,
     config_id: int,
     limit: int = 20,
     db: Session = Depends(get_db),
@@ -193,8 +198,10 @@ from app.services.radar.fetcher import fetch_page, fetch_page_curl_only, fetch_p
 from app.services.radar.llm import analyze_with_llm, fetch_user_llm_config  # noqa: E402
 
 
+@limiter.limit("10/minute")
 @router.post("/test/fetch", response_model=RadarTestFetchResponse)
 def test_fetch(
+    request: Request,
     req: RadarTestFetchRequest,
     current_user: User = Depends(get_current_user),
 ):
@@ -222,8 +229,10 @@ def test_fetch(
     )
 
 
+@limiter.limit("10/minute")
 @router.post("/test/analyze", response_model=RadarTestAnalyzeResponse)
 def test_analyze(
+    request: Request,
     req: RadarTestAnalyzeRequest,
     current_user: User = Depends(get_current_user),
 ):
@@ -242,8 +251,10 @@ def test_analyze(
     )
 
 
+@limiter.limit("5/minute")
 @router.post("/test/full", response_model=RadarTestFullResponse)
 def test_full(
+    request: Request,
     req: RadarTestFullRequest,
     current_user: User = Depends(get_current_user),
 ):

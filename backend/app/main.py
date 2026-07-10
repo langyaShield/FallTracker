@@ -146,6 +146,7 @@ _add_column_if_not_exists("user_settings", "cos_path", "VARCHAR(500)")
 _add_column_if_not_exists("user_settings", "cos_auto_backup_hours", "INTEGER")
 _add_column_if_not_exists("users", "is_admin", "BOOLEAN DEFAULT 0")
 _add_column_if_not_exists("users", "is_disabled", "BOOLEAN DEFAULT 0")
+_add_column_if_not_exists("users", "token_version", "INTEGER DEFAULT 0")  # P2-8: JWT token 版本
 _add_column_if_not_exists("crawler_configs", "extra_headers", "TEXT")
 _add_column_if_not_exists("crawler_configs", "last_error", "VARCHAR(500)")
 _add_column_if_not_exists("crawler_configs", "consecutive_failures", "INTEGER")
@@ -339,13 +340,50 @@ mcp_app = mcp.streamable_http_app()
 from starlette.types import Scope, Receive, Send
 
 class MCPMiddleware:
-    """ASGI middleware: routes /mcp and /mcp/* to the MCP sub-application."""
+    """ASGI middleware: routes /mcp and /mcp/* to the MCP sub-application.
+
+    P0-2: 强制要求 MCP 端点认证。支持两种方式：
+    1. 固定 API KEY（MCP_API_KEY 环境变量）
+    2. JWT Bearer token（与 Web API 共用）
+    """
     def __init__(self, app, mcp_app):
         self.app = app
         self.mcp_app = mcp_app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] == "http" and scope["path"].startswith("/mcp"):
+            # P0-2: 验证 MCP 请求的认证头
+            headers = dict(scope.get("headers", []))
+            auth_header = headers.get(b"authorization", b"").decode("utf-8", errors="ignore")
+            if not auth_header.lower().startswith("bearer "):
+                from starlette.responses import JSONResponse
+                response = JSONResponse(
+                    status_code=401,
+                    content={"detail": "MCP 端点需要认证，请在 Authorization 头中提供 Bearer token"},
+                )
+                await response(scope, receive, send)
+                return
+
+            token = auth_header[7:].strip()
+            # 优先检查固定 API KEY
+            if settings.MCP_API_KEY and token == settings.MCP_API_KEY:
+                pass  # 固定 API KEY 有效
+            else:
+                # 否则走 JWT 认证
+                try:
+                    from jose import JWTError, jwt
+                    payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+                    if not payload.get("sub"):
+                        raise JWTError("missing sub")
+                except (JWTError, Exception):
+                    from starlette.responses import JSONResponse
+                    response = JSONResponse(
+                        status_code=401,
+                        content={"detail": "无效的认证凭据"},
+                    )
+                    await response(scope, receive, send)
+                    return
+
             scope = dict(scope)
             path = scope["path"]
             scope["path"] = path[4:] if len(path) > 4 else "/"

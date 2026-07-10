@@ -46,7 +46,7 @@ def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends(), db
     user = db.query(User).filter(User.username == form_data.username).first()
     if not user or not verify_password(form_data.password, user.password_hash):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password")
-    access_token = create_access_token(data={"sub": str(user.id)})
+    access_token = create_access_token(data={"sub": str(user.id)}, token_version=user.token_version)
     return {"access_token": access_token, "token_type": "bearer"}
 
 
@@ -80,5 +80,7 @@ def change_password(
         raise HTTPException(status_code=400, detail="新密码不能与旧密码相同")
 
     current_user.password_hash = get_password_hash(data.new_password)
+    # P2-8: 密码修改后递增 token 版本，使所有旧 token 失效
+    current_user.token_version = (current_user.token_version or 0) + 1
     db.commit()
     return {"detail": "密码修改成功"}
