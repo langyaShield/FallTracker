@@ -56,7 +56,7 @@ def get_profile(
         by_category[f.category].append(f)
 
     result = []
-    for cat in ("basic", "education", "work"):
+    for cat in ("basic", "education"):
         cat_fields = by_category.get(cat, [])
         groups = _group_fields(cat_fields)
         result.append(ProfileCategoryOut(category=cat, groups=groups))

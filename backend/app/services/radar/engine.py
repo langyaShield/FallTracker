@@ -185,7 +185,7 @@ def execute_crawler(config_id: int) -> None:
                 item_count = len(matched_items)
                 body_text = summary
                 if item_count > 0:
-                    body_text = f"发现 {item_count} 个匹配职位: {summary}"
+                    body_text = f"发现 {item_count} 条匹配内容: {summary}"
                 _create_notification_independent(
                     user_id=config.user_id,
                     type_="radar_hit",

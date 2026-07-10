@@ -104,9 +104,8 @@ const copyAllBasic = () => {
 // ─── 获取分类数据 ───
 const getCategory = (name: string) => profileData.value.find(c => c.category === name)
 
-// ─── 教育/工作经历的当前选中分组 ───
+// ─── 教育经历的当前选中分组 ───
 const activeEduGroup = ref(0)
-const activeWorkGroup = ref(0)
 </script>
 
 <template>
@@ -209,60 +208,6 @@ const activeWorkGroup = ref(0)
           </div>
         </template>
         <div v-else class="empty-hint">暂未填写教育经历</div>
-      </div>
-
-      <!-- 工作经历 -->
-      <div class="category-section">
-        <div class="category-header">
-          <span class="category-title">{{ PROFILE_CATEGORY_LABELS.work || '工作经历' }}</span>
-          <el-button
-            v-if="getCategory('work')?.groups?.length"
-            link
-            type="primary"
-            :icon="DocumentCopy"
-            @click="copyGroup(getCategory('work')!.groups[activeWorkGroup] || getCategory('work')!.groups[0], 'work')"
-          >
-            复制本条
-          </el-button>
-        </div>
-
-        <template v-if="getCategory('work')?.groups?.length">
-          <el-tabs
-            v-if="getCategory('work')!.groups.length > 1"
-            v-model="activeWorkGroup"
-            size="small"
-            class="group-tabs"
-          >
-            <el-tab-pane
-              v-for="(g, i) in getCategory('work')!.groups"
-              :key="g.group_index"
-              :label="`经历 ${i + 1}`"
-              :name="i"
-            />
-          </el-tabs>
-
-          <div class="field-list">
-            <div
-              v-for="field in (getCategory('work')!.groups[activeWorkGroup] || getCategory('work')!.groups[0])?.fields || []"
-              :key="field.field_key"
-              class="field-item"
-            >
-              <div class="field-info">
-                <span class="field-label">{{ getCategoryFieldLabel('work', field.field_key) }}</span>
-                <span class="field-value">{{ field.field_value }}</span>
-              </div>
-              <el-button
-                class="copy-btn"
-                link
-                type="primary"
-                :icon="CopyDocument"
-                aria-label="复制字段"
-                @click="copyField(field)"
-              />
-            </div>
-          </div>
-        </template>
-        <div v-else class="empty-hint">暂未填写工作经历</div>
       </div>
 
       <!-- 底部提示 -->

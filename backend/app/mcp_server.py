@@ -736,7 +736,7 @@ async def delete_event(ctx: Context, event_id: int) -> dict:
 # ---------------------------------------------------------------------------
 @mcp.tool()
 async def get_profile(ctx: Context) -> dict:
-    """Get the user's profile information repository (basic/education/work)."""
+    """Get the user's profile information repository (basic/education)."""
 
     def sync():
         user, db = _get_user(ctx)
@@ -758,7 +758,7 @@ async def get_profile(ctx: Context) -> dict:
                     }
                 )
             result = {}
-            for cat in ("basic", "education", "work"):
+            for cat in ("basic", "education"):
                 groups = by_category.get(cat, {})
                 result[cat] = [
                     {"group_index": gi, "fields": sorted(items, key=lambda x: x["sort_order"])}
@@ -780,11 +780,11 @@ async def update_profile_category(
     """Replace all groups in a profile category.
 
     Args:
-        category: basic | education | work
+        category: basic | education
         groups: List of {"group_index": int | null, "fields": [{"field_key": str, "field_value": str, "sort_order": int}]}
     """
-    if category not in {"basic", "education", "work"}:
-        return {"error": "category 必须是 basic/education/work 之一"}
+    if category not in {"basic", "education"}:
+        return {"error": "category 必须是 basic/education 之一"}
 
     def sync():
         user, db = _get_user(ctx)

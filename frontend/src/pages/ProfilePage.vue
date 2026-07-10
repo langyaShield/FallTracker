@@ -9,7 +9,6 @@ import {
   PROFILE_CATEGORY_LABELS,
   PROFILE_BASIC_FIELDS,
   PROFILE_EDUCATION_FIELDS,
-  PROFILE_WORK_FIELDS,
   getProfileFieldLabel,
   getCategoryFieldLabel,
 } from '@/lib/constants'
@@ -31,7 +30,6 @@ const savingCategory = ref<string | null>(null)
 // 各分类的数据
 const basicFields = ref<FieldEntry[]>([])
 const educationGroups = ref<GroupEntry[]>([])
-const workGroups = ref<GroupEntry[]>([])
 
 // 自定义字段的输入
 const customBasicKey = ref('')
@@ -80,11 +78,6 @@ const fetchProfile = async () => {
           group_index: g.group_index,
           fields: g.fields.map(f => ({ key: f.field_key, value: f.field_value })),
         }))
-      } else if (cat.category === 'work') {
-        workGroups.value = cat.groups.map(g => ({
-          group_index: g.group_index,
-          fields: g.fields.map(f => ({ key: f.field_key, value: f.field_value })),
-        }))
       }
     }
   } catch (e: any) {
@@ -98,7 +91,7 @@ const fetchProfile = async () => {
 const saveCategory = async (category: string) => {
   savingCategory.value = category
   try {
-    let groups: Array<{ group_index: number | null; fields: Array<{ field_key: string; field_value: string; sort_order: number }> }>
+    let groups: Array<{ group_index: number | null; fields: Array<{ field_key: string; field_value: string; sort_order: number }> }> = []
 
     if (category === 'basic') {
       groups = [{
@@ -109,13 +102,6 @@ const saveCategory = async (category: string) => {
       }]
     } else if (category === 'education') {
       groups = educationGroups.value.map(g => ({
-        group_index: g.group_index,
-        fields: g.fields
-          .filter(f => f.value.trim())
-          .map((f, i) => ({ field_key: f.key, field_value: f.value, sort_order: i })),
-      }))
-    } else {
-      groups = workGroups.value.map(g => ({
         group_index: g.group_index,
         fields: g.fields
           .filter(f => f.value.trim())
@@ -136,11 +122,6 @@ const saveCategory = async (category: string) => {
       }
     } else if (category === 'education') {
       educationGroups.value = resultGroups.map((g: any) => ({
-        group_index: g.group_index,
-        fields: g.fields.map((f: any) => ({ key: f.field_key, value: f.field_value })),
-      }))
-    } else {
-      workGroups.value = resultGroups.map((g: any) => ({
         group_index: g.group_index,
         fields: g.fields.map((f: any) => ({ key: f.field_key, value: f.field_value })),
       }))
@@ -185,22 +166,10 @@ const removeEducationGroup = (index: number) => {
   educationGroups.value.splice(index, 1)
 }
 
-// ─── 工作经历操作 ───
-const addWorkGroup = () => {
-  workGroups.value.push({
-    group_index: null,
-    fields: PROFILE_WORK_FIELDS.map(f => ({ key: f.key, value: '' })),
-  })
-}
-
-const removeWorkGroup = (index: number) => {
-  workGroups.value.splice(index, 1)
-}
-
 // ─── 获取字段标签 ───
 const getFieldLabel = (key: string) => getProfileFieldLabel(key)
 
-// 获取教育/工作经历中缺失的预设字段（用于"添加字段"下拉）
+// 获取教育经历中缺失的预设字段（用于"添加字段"下拉）
 const getMissingFields = (group: GroupEntry, presetFields: Array<{ key: string; label: string }>) => {
   const existingKeys = new Set(group.fields.map(f => f.key))
   return presetFields.filter(f => !existingKeys.has(f.key))
@@ -327,68 +296,6 @@ onMounted(fetchProfile)
             @click="saveCategory('education')"
           >
             保存教育经历
-          </el-button>
-        </div>
-      </el-tab-pane>
-
-      <!-- ─── 工作经历 ─── -->
-      <el-tab-pane label="工作经历" name="work">
-        <div v-for="(group, gi) in workGroups" :key="gi" class="group-card">
-          <el-card shadow="never" class="section-card">
-            <template #header>
-              <div class="group-header">
-                <span class="group-title">工作经历 {{ gi + 1 }}</span>
-                <el-button link type="danger" :icon="Delete" @click="removeWorkGroup(gi)">删除</el-button>
-              </div>
-            </template>
-
-            <div class="field-grid">
-              <div v-for="(field, fi) in group.fields" :key="field.key" class="field-row">
-                <div class="field-label">{{ getCategoryFieldLabel('work', field.key) }}</div>
-                <div class="field-input">
-                  <el-input
-                    v-if="field.key === 'description' || field.key === 'achievements'"
-                    v-model="field.value"
-                    type="textarea"
-                    :rows="3"
-                    :placeholder="getCategoryFieldLabel('work', field.key)"
-                  />
-                  <el-input v-else v-model="field.value" :placeholder="getCategoryFieldLabel('work', field.key)" clearable />
-                </div>
-                <el-button link type="danger" :icon="Delete" aria-label="删除字段" @click="removeFieldFromGroup(group, fi)" />
-              </div>
-            </div>
-
-            <div class="add-group-field" v-if="getMissingFields(group, PROFILE_WORK_FIELDS).length > 0">
-              <el-dropdown trigger="click" @command="(key: string) => addFieldToGroup(group, key)">
-                <el-button link type="primary">
-                  <el-icon><Plus /></el-icon> 添加字段
-                </el-button>
-                <template #dropdown>
-                  <el-dropdown-menu>
-                    <el-dropdown-item
-                      v-for="mf in getMissingFields(group, PROFILE_WORK_FIELDS)"
-                      :key="mf.key"
-                      :command="mf.key"
-                    >
-                      {{ mf.label }}
-                    </el-dropdown-item>
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
-            </div>
-          </el-card>
-        </div>
-
-        <div class="group-actions">
-          <el-button :icon="Plus" @click="addWorkGroup">添加工作经历</el-button>
-          <el-button
-            type="primary"
-            :icon="Select"
-            :loading="savingCategory === 'work'"
-            @click="saveCategory('work')"
-          >
-            保存工作经历
           </el-button>
         </div>
       </el-tab-pane>

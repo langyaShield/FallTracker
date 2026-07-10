@@ -50,7 +50,6 @@ export type PublicPath = (typeof PUBLIC_PATHS)[number]
 export const PROFILE_CATEGORY_LABELS: Record<string, string> = {
   basic: '基本信息',
   education: '教育经历',
-  work: '工作经历',
 }
 
 /** 基本信息预设字段（key → 中文标签） */
@@ -85,17 +84,6 @@ export const PROFILE_EDUCATION_FIELDS: Array<{ key: string; label: string }> = [
   { key: 'awards', label: '获奖情况' },
 ]
 
-/** 工作经历预设字段 */
-export const PROFILE_WORK_FIELDS: Array<{ key: string; label: string }> = [
-  { key: 'company', label: '公司' },
-  { key: 'position', label: '岗位' },
-  { key: 'department', label: '部门' },
-  { key: 'start_date', label: '开始时间' },
-  { key: 'end_date', label: '结束时间' },
-  { key: 'description', label: '工作内容' },
-  { key: 'achievements', label: '主要成果' },
-]
-
 /** 所有字段的中文标签映射 */
 const PROFILE_FIELD_LABEL_MAP: Record<string, string> = {
   name: '姓名',
@@ -122,11 +110,6 @@ const PROFILE_FIELD_LABEL_MAP: Record<string, string> = {
   rank: '排名',
   courses: '主修课程',
   awards: '获奖情况',
-  company: '公司',
-  position: '岗位',
-  department: '部门',
-  description: '工作内容',
-  achievements: '主要成果',
 }
 
 /** 获取字段中文标签（全局，不区分分类），未知字段返回 key 本身 */
@@ -136,11 +119,7 @@ export function getProfileFieldLabel(key: string): string {
 
 /** 获取字段中文标签（分类感知），优先使用分类预设字段的 label，解决同 key 不同分类标签不同的问题 */
 export function getCategoryFieldLabel(category: string, key: string): string {
-  const presets = category === 'education'
-    ? PROFILE_EDUCATION_FIELDS
-    : category === 'work'
-      ? PROFILE_WORK_FIELDS
-      : null
+  const presets = category === 'education' ? PROFILE_EDUCATION_FIELDS : null
   if (presets) {
     const match = presets.find(f => f.key === key)
     if (match) return match.label

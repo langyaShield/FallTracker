@@ -98,7 +98,7 @@ def test_agent_profile(client, token):
     r = client.get("/api/agent/profile", headers=_auth(token))
     assert r.status_code == 200
     data = r.json()
-    for cat in ("basic", "education", "work"):
+    for cat in ("basic", "education"):
         assert cat in data
         assert isinstance(data[cat], list)
 

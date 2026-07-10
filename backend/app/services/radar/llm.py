@@ -37,13 +37,20 @@ def fetch_user_llm_config(user_id: int) -> Dict[str, Optional[str]]:
 
 
 def _build_prompt(target_desc: str, content: str) -> str:
-    return f"""你是一个专业的网页内容分析助手。请分析以下从招聘网站抓取的页面内容，完成两个任务：
+    # 监控目标为空时，退化为通用的「页面更新/值得关注内容」检测，保证容错性
+    if target_desc.strip():
+        goal_block = f"[监控目标]\n{target_desc.strip()}"
+        goal_hint = "判断页面中是否包含与「监控目标」相关的内容或更新"
+    else:
+        goal_block = "[监控目标]\n（用户未指定具体目标，请检测页面是否有值得关注的内容或更新）"
+        goal_hint = "判断页面是否有值得用户关注的内容或更新"
 
-1. **目标匹配**：判断页面中是否包含用户关注的目标内容
-2. **信息提取**：从页面中提取所有职位/岗位的结构化信息
+    return f"""你是一个通用的网页内容分析助手。请分析以下抓取到的网页内容，完成两个任务：
 
-[监控目标]
-{target_desc}
+1. **目标判断**：{goal_hint}
+2. **信息提取**：从页面中提取所有值得关注的结构化信息条目。若页面是招聘类内容，请填写公司/岗位/薪资等字段；若是其他类型内容（公告、商品、资讯等），可将关键信息填入 company/position 字段或留空，并在 match_reason 中说明。
+
+{goal_block}
 
 [页面内容]
 {content}
@@ -54,13 +61,13 @@ def _build_prompt(target_desc: str, content: str) -> str:
   "summary": "简要概述页面内容和发现",
   "matched_items": [
     {{
-      "company": "公司名称",
-      "position": "岗位名称",
-      "salary": "薪资范围（如有）",
-      "location": "工作地点（如有）",
+      "company": "公司名称（招聘场景填写，其他场景可留空）",
+      "position": "岗位名称或条目标题（招聘场景填岗位，其他场景可填条目标题）",
+      "salary": "薪资范围（如有，否则留空）",
+      "location": "工作地点或相关位置（如有，否则留空）",
       "link": "详情链接（如有）",
       "tags": ["标签1", "标签2"],
-      "match_reason": "匹配原因"
+      "match_reason": "该条目值得关注的原因或与目标的匹配说明"
     }}
   ],
   "reasoning": "分析推理过程"
@@ -115,16 +122,11 @@ def _parse_llm_response(llm_text: str) -> Dict[str, Any]:
 
 
 def analyze_with_llm(target_desc: str, content: str, llm_config: Dict[str, Optional[str]]) -> Dict[str, Any]:
-    """Send content + target to LLM and return a structured analysis dict with matched_items."""
-    if not target_desc.strip():
-        return {
-            "target_found": False,
-            "summary": "未设置爬虫目标，跳过分析",
-            "matched_content": "",
-            "matched_items": [],
-            "reasoning": "",
-        }
+    """Send content + target to LLM and return a structured analysis dict with matched_items.
 
+    target_desc 为空时不再跳过分析，而是退化为通用的「页面更新检测」，
+    保证用户即使只想抓取通知也能获得有效的分析结果。
+    """
     if not content.strip() or content.startswith("(页面"):
         return {
             "target_found": False,

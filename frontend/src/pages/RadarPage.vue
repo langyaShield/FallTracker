@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Plus, VideoPlay, VideoPause, Edit, Delete, CaretRight } from '@element-plus/icons-vue'
+import { Plus, VideoPlay, VideoPause, Edit, Delete } from '@element-plus/icons-vue'
 import api from '@/lib/api'
 import { formatLocaleDateTime } from '@/lib/format'
 import { STATUS_COLUMNS } from '@/lib/constants'
@@ -50,29 +50,8 @@ interface CrawlerResult {
   created_at: string
 }
 
-interface CrawlerTemplate {
-  id: string
-  name: string
-  description: string
-  url: string
-  suggested_target: string
-  site_tips: string[]
-}
-
 // ========== Tab State ==========
 const activeTab = ref('configs')
-
-// ========== Templates ==========
-const templates = ref<CrawlerTemplate[]>([])
-
-async function fetchTemplates() {
-  try {
-    const res = await api.get('/radar/templates')
-    templates.value = res.data || []
-  } catch (e) {
-    console.warn('模板加载失败', e)
-  }
-}
 
 // ========== Configs Tab ==========
 const configs = ref<CrawlerConfig[]>([])
@@ -92,9 +71,7 @@ const displayedConfigs = computed(() => configs.value.filter((c) => !deletingCon
 
 // 创建向导
 const wizardVisible = ref(false)
-const wizardStep = ref(0)  // 0: 选模板/自定义, 1: 填写信息, 2: 完成
-const selectedTemplate = ref<CrawlerTemplate | null>(null)
-const isCustomMode = ref(false)
+const wizardStep = ref(1)  // 1: 填写信息, 2: 完成
 const configForm = ref({
   name: '',
   url: '',
@@ -136,40 +113,13 @@ async function fetchConfigs() {
 // ─── 创建向导 ───
 
 function openWizard() {
-  wizardStep.value = 0
-  selectedTemplate.value = null
-  isCustomMode.value = false
+  wizardStep.value = 1
   configForm.value = {
     name: '', url: '', extra_headers: '',
     interval_hours: 24, target_description: '',
     email_to: '', is_active: true,
   }
   wizardVisible.value = true
-}
-
-function selectTemplate(tpl: CrawlerTemplate) {
-  selectedTemplate.value = tpl
-  isCustomMode.value = false
-  // 自动填充模板信息
-  configForm.value.name = tpl.name + '监控'
-  configForm.value.url = tpl.url
-  configForm.value.target_description = tpl.suggested_target || ''
-  wizardStep.value = 1
-}
-
-function selectCustom() {
-  selectedTemplate.value = null
-  isCustomMode.value = true
-  configForm.value = {
-    name: '', url: '', extra_headers: '',
-    interval_hours: 24, target_description: '',
-    email_to: '', is_active: true,
-  }
-  wizardStep.value = 1
-}
-
-function goBackToStep0() {
-  wizardStep.value = 0
 }
 
 async function saveNewConfig() {
@@ -378,7 +328,6 @@ const emailLoading = ref(false)
 // ========== Lifecycle ==========
 onMounted(() => {
   fetchConfigs()
-  fetchTemplates()
 })
 </script>
 
@@ -389,39 +338,6 @@ onMounted(() => {
     <el-tabs v-model="activeTab" class="radar-tabs">
       <!-- ========== Tab 1: 我的监控 ========== -->
       <el-tab-pane label="我的监控" name="configs">
-        <!-- 快速创建入口 -->
-        <div class="quick-create-section">
-          <div class="section-title">
-            <h3>快速创建</h3>
-            <span class="section-desc">选择招聘网站模板，一键创建监控</span>
-          </div>
-          <div class="template-cards">
-            <div
-              v-for="tpl in templates"
-              :key="tpl.id"
-              class="template-card"
-              @click="selectTemplate(tpl); wizardVisible = true"
-            >
-              <div class="tpl-name">{{ tpl.name }}</div>
-              <div class="tpl-desc">{{ tpl.description }}</div>
-              <div v-if="tpl.site_tips.length" class="tpl-notes">
-                <span v-for="tip in tpl.site_tips" :key="tip" class="tpl-note">{{ tip }}</span>
-              </div>
-              <el-button type="primary" size="small" class="tpl-btn">
-                <el-icon><CaretRight /></el-icon> 使用此模板
-              </el-button>
-            </div>
-            <!-- 自定义创建卡片 -->
-            <div class="template-card custom-card" @click="selectCustom(); wizardVisible = true">
-              <div class="tpl-name">自定义网站</div>
-              <div class="tpl-desc">手动填写任意网站的监控配置</div>
-              <el-button size="small" class="tpl-btn">
-                <el-icon><Plus /></el-icon> 自定义创建
-              </el-button>
-            </div>
-          </div>
-        </div>
-
         <!-- 已有配置列表 -->
         <div class="configs-section">
           <div class="section-title">
@@ -473,59 +389,35 @@ onMounted(() => {
                 </div>
               </div>
             </el-card>
-            <el-empty v-if="!configsLoading && displayedConfigs.length === 0" description="暂无监控，点击上方模板快速创建" />
+            <el-empty v-if="!configsLoading && displayedConfigs.length === 0" description="暂无监控，点击上方按钮快速创建" />
           </div>
         </div>
 
         <!-- 创建向导对话框 -->
         <el-dialog
           v-model="wizardVisible"
-          :title="wizardStep === 0 ? '选择创建方式' : wizardStep === 1 ? '填写监控信息' : '创建成功'"
+          :title="wizardStep === 1 ? '填写监控信息' : '创建成功'"
           width="600px"
           :close-on-click-modal="wizardStep !== 1"
         >
-          <!-- Step 0: 选择模板（弹窗内备用） -->
-          <template v-if="wizardStep === 0">
-            <div class="wizard-templates">
-              <div
-                v-for="tpl in templates"
-                :key="tpl.id"
-                class="wizard-tpl-item"
-                @click="selectTemplate(tpl)"
-              >
-                <span class="wizard-tpl-name">{{ tpl.name }}</span>
-                <span class="wizard-tpl-desc">{{ tpl.description }}</span>
-              </div>
-              <div class="wizard-tpl-item custom" @click="selectCustom()">
-                <span class="wizard-tpl-name">自定义网站</span>
-                <span class="wizard-tpl-desc">手动填写任意网站</span>
-              </div>
-            </div>
-          </template>
-
           <!-- Step 1: 填写信息 -->
           <template v-if="wizardStep === 1">
-            <div v-if="selectedTemplate" class="template-hint">
-              <el-tag type="info" size="small">基于模板: {{ selectedTemplate.name }}</el-tag>
-              <el-button type="primary" link size="small" @click="goBackToStep0">重新选择</el-button>
-            </div>
-
             <el-form :model="configForm" label-width="100px" class="wizard-form">
               <el-form-item label="监控名称" required>
                 <el-input v-model="configForm.name" placeholder="如：BOSS直聘-前端开发" />
               </el-form-item>
               <el-form-item label="目标网址" required>
                 <el-input v-model="configForm.url" placeholder="https://www.zhipin.com/web/geek/job?query=前端" />
-                <div class="form-tip">要监控的招聘网站页面地址，可直接从浏览器复制</div>
+                <div class="form-tip">要监控的网页地址，可直接从浏览器复制</div>
               </el-form-item>
               <el-form-item label="寻找目标">
                 <el-input
                   v-model="configForm.target_description"
                   type="textarea"
                   :rows="3"
-                  placeholder="用自然语言描述你想监控的岗位，例如：&#10;- 前端开发实习岗位，薪资8k以上&#10;- Java后端开发，本科及以上学历&#10;- 字节跳动或腾讯的数据分析岗位"
+                  placeholder="用自然语言描述你想监控的内容（留空则只抓取页面更新通知），例如：&#10;- 前端开发实习岗位，薪资8k以上&#10;- 字节跳动或腾讯的数据分析岗位&#10;- 某商品是否上架 / 某页面是否有公告更新"
                 />
-                <div class="form-tip">AI 会自动分析页面内容，提取匹配的职位信息</div>
+                <div class="form-tip">AI 会自动分析页面内容，提取匹配的信息条目；留空时仅做页面更新通知</div>
               </el-form-item>
               <el-form-item label="检查频率">
                 <el-select v-model="configForm.interval_hours" style="width: 200px">
@@ -573,7 +465,7 @@ onMounted(() => {
           </template>
 
           <template #footer v-if="wizardStep === 1">
-            <el-button @click="wizardStep = 0">上一步</el-button>
+            <el-button @click="wizardVisible = false">取消</el-button>
             <el-button type="primary" :loading="configSaving" @click="saveNewConfig">创建监控</el-button>
           </template>
         </el-dialog>
@@ -588,7 +480,7 @@ onMounted(() => {
               <el-input v-model="editForm.url" />
             </el-form-item>
             <el-form-item label="寻找目标">
-              <el-input v-model="editForm.target_description" type="textarea" :rows="3" />
+              <el-input v-model="editForm.target_description" type="textarea" :rows="3" placeholder="用自然语言描述监控目标，留空则仅抓取页面更新通知" />
             </el-form-item>
             <el-form-item label="检查频率">
               <el-select v-model="editForm.interval_hours" style="width: 200px">
@@ -682,7 +574,7 @@ onMounted(() => {
             </div>
             <!-- AI 提取结果 -->
             <div v-if="selectedResult.matched_items && selectedResult.matched_items.length > 0" class="detail-section">
-              <h4>AI 提取结果 <el-tag size="small" type="success" style="margin-left: 8px">{{ selectedResult.matched_items.length }} 个匹配职位</el-tag></h4>
+              <h4>AI 提取结果 <el-tag size="small" type="success" style="margin-left: 8px">{{ selectedResult.matched_items.length }} 条匹配内容</el-tag></h4>
               <el-table :data="selectedResult.matched_items" stripe size="small" style="width: 100%">
                 <el-table-column prop="company" label="公司" min-width="120">
                   <template #default="{ row }">{{ row.company || '-' }}</template>
@@ -704,7 +596,8 @@ onMounted(() => {
                 </el-table-column>
                 <el-table-column label="操作" width="100">
                   <template #default="{ row }">
-                    <el-button type="primary" size="small" :icon="Plus" @click="openQuickDelivery(row)">快速投递</el-button>
+                    <el-button v-if="row.company || row.position" type="primary" size="small" :icon="Plus" @click="openQuickDelivery(row)">快速投递</el-button>
+                    <span v-else>-</span>
                   </template>
                 </el-table-column>
               </el-table>
@@ -782,14 +675,7 @@ onMounted(() => {
   padding: 16px 20px;
 }
 
-/* ─── 快速创建区域 ─── */
-.quick-create-section {
-  margin-bottom: 28px;
-  padding: 20px;
-  background: linear-gradient(135deg, #f0f7ff 0%, #f5f0ff 100%);
-  border-radius: 10px;
-}
-
+/* ─── 通用标题 ─── */
 .section-title {
   display: flex;
   align-items: baseline;
@@ -807,67 +693,6 @@ onMounted(() => {
 .section-desc {
   font-size: 13px;
   color: #64748b;
-}
-
-.template-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 14px;
-}
-
-.template-card {
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 16px;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.template-card:hover {
-  border-color: #409eff;
-  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.15);
-  transform: translateY(-1px);
-}
-
-.custom-card {
-  border-style: dashed;
-  background: #fafbfc;
-}
-
-.tpl-name {
-  font-weight: 600;
-  font-size: 15px;
-  color: #1e293b;
-}
-
-.tpl-desc {
-  font-size: 12px;
-  color: #64748b;
-  line-height: 1.4;
-  flex: 1;
-}
-
-.tpl-notes {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.tpl-note {
-  font-size: 11px;
-  color: #d97706;
-  background: #fffbeb;
-  padding: 2px 6px;
-  border-radius: 3px;
-}
-
-.tpl-btn {
-  align-self: flex-start;
-  margin-top: 4px;
 }
 
 /* ─── 配置列表 ─── */
@@ -962,16 +787,6 @@ onMounted(() => {
 }
 
 /* ─── 向导 ─── */
-.template-hint {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-  padding: 8px 12px;
-  background: #f0f7ff;
-  border-radius: 6px;
-}
-
 .wizard-form {
   max-height: 55vh;
   overflow-y: auto;
@@ -993,43 +808,6 @@ onMounted(() => {
 
 .advanced-collapse :deep(.el-collapse-item__wrap) {
   border-bottom: none;
-}
-
-.wizard-templates {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.wizard-tpl-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 16px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.15s;
-}
-
-.wizard-tpl-item:hover {
-  border-color: #409eff;
-  background: #f0f7ff;
-}
-
-.wizard-tpl-item.custom {
-  border-style: dashed;
-}
-
-.wizard-tpl-name {
-  font-weight: 600;
-  color: #1e293b;
-  white-space: nowrap;
-}
-
-.wizard-tpl-desc {
-  font-size: 13px;
-  color: #64748b;
 }
 
 .wizard-success {
@@ -1130,10 +908,6 @@ onMounted(() => {
   .config-header {
     flex-wrap: wrap;
     gap: 8px;
-  }
-
-  .template-cards {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
   }
 }
 </style>

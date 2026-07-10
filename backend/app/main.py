@@ -95,6 +95,34 @@ def _create_index_if_not_exists(table_name: str, column_name: str):
         conn.close()
 
 
+def _cleanup_work_profile_fields():
+    """移除已下线的「工作经历」分类历史数据（profile_fields 表中 category='work' 的行）。
+
+    一次性数据清理，安全幂等：表不存在或无 work 行时直接返回。
+    """
+    table_name = "profile_fields"
+    try:
+        inspector = sa_inspect(engine)
+        if not inspector.has_table(table_name):
+            return
+    except SQLAlchemyError as e:
+        logger.warning("inspect() failed for %s, skip work cleanup: %s", table_name, e)
+        return
+    db_path = settings.DATABASE_URL.replace("sqlite:///", "")
+    conn = sqlite3.connect(db_path)
+    try:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM profile_fields WHERE category = ?", ("work",))
+        deleted = cursor.rowcount
+        conn.commit()
+        if deleted:
+            logger.info("Cleaned up %d legacy 'work' profile_fields rows", deleted)
+    except SQLAlchemyError as e:
+        logger.warning("Failed to cleanup work profile_fields: %s", e)
+    finally:
+        conn.close()
+
+
 Base.metadata.create_all(bind=engine)
 
 # Patch new columns into existing tables (safe to run multiple times)
@@ -123,6 +151,9 @@ _add_column_if_not_exists("crawler_configs", "last_error", "VARCHAR(500)")
 _add_column_if_not_exists("crawler_configs", "consecutive_failures", "INTEGER")
 _add_column_if_not_exists("crawler_results", "matched_items", "TEXT")
 _add_column_if_not_exists("user_settings", "email_template", "TEXT")
+
+# 移除已下线的「工作经历」分类历史数据
+_cleanup_work_profile_fields()
 
 # Ensure indexes exist on high-frequency filter columns (idempotent)
 _create_index_if_not_exists("deliveries", "user_id")

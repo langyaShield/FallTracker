@@ -443,7 +443,8 @@ const fetchResumes = async () => {
 }
 
 const openAdd = (defaultStatus?: string) => {
-  editing.value = { status: defaultStatus || 'pending', tags: [], deadline: null }
+  const status = typeof defaultStatus === 'string' ? defaultStatus : 'pending'
+  editing.value = { status: status || 'pending', tags: [], deadline: null }
   dialogVisible.value = true
 }
 
@@ -560,7 +561,7 @@ onMounted(() => {
         <template v-if="!hasActiveFilters" #default>
           <p class="empty-board-hint">点击右上角「新增投递」开始记录你的求职进展</p>
           <div class="empty-board-actions">
-            <el-button type="primary" :icon="Plus" @click="openAdd">新增第一条投递</el-button>
+            <el-button type="primary" :icon="Plus" @click="openAdd()">新增第一条投递</el-button>
             <el-button :icon="Upload" @click="importDialogVisible = true">批量导入</el-button>
           </div>
         </template>

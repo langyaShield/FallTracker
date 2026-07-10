@@ -186,8 +186,8 @@ class Bookmark(Base):
 class ProfileField(Base):
     """个人信息库：键值对 + 分组的灵活存储模型。
 
-    category 分类：basic（基本信息）、education（教育经历）、work（工作经历）
-    group_index：basic 固定为 0；education/work 每条记录一个唯一索引
+    category 分类：basic（基本信息）、education（教育经历）
+    group_index：basic 固定为 0；education 每条记录一个唯一索引
     """
     __tablename__ = "profile_fields"
 

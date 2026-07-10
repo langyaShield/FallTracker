@@ -412,7 +412,7 @@ def get_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get the user's profile information repository (basic/education/work)."""
+    """Get the user's profile information repository (basic/education)."""
     fields = (
         db.query(ProfileField)
         .filter(ProfileField.user_id == current_user.id)
@@ -430,7 +430,7 @@ def get_profile(
             }
         )
     result: Dict[str, List[Dict]] = {}
-    for cat in ("basic", "education", "work"):
+    for cat in ("basic", "education"):
         groups = by_category.get(cat, {})
         result[cat] = [
             {"group_index": gi, "fields": sorted(items, key=lambda x: x["sort_order"])}
@@ -449,8 +449,8 @@ def update_profile_category(
     current_user: User = Depends(get_current_user),
 ):
     """Replace all groups in a profile category."""
-    if category not in {"basic", "education", "work"}:
-        raise HTTPException(status_code=400, detail="category 必须是 basic/education/work 之一")
+    if category not in {"basic", "education"}:
+        raise HTTPException(status_code=400, detail="category 必须是 basic/education 之一")
 
     uid = current_user.id
     db.query(ProfileField).filter(ProfileField.user_id == uid, ProfileField.category == category).delete(

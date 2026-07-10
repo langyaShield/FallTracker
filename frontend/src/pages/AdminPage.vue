@@ -184,9 +184,10 @@ const cleanupExpiredCodes = async () => {
 }
 
 const deleteInviteCode = async (row: InviteCodeItem) => {
+  const usedHint = row.is_used ? '\n该邀请码已被使用，删除后不影响已注册用户。' : ''
   try {
     await ElMessageBox.confirm(
-      `确定要删除邀请码 "${row.code}" 吗？此操作不可撤销。`,
+      `确定要删除邀请码 "${row.code}" 吗？此操作不可撤销。${usedHint}`,
       '删除邀请码',
       { confirmButtonText: '确定删除', cancelButtonText: '取消', type: 'warning' },
     )
@@ -384,7 +385,6 @@ onMounted(() => {
         <el-table-column label="操作" width="80" fixed="right">
           <template #default="{ row }">
             <el-button
-              v-if="!row.is_used"
               type="danger"
               size="small"
               text
@@ -393,7 +393,6 @@ onMounted(() => {
             >
               删除
             </el-button>
-            <span v-else class="text-muted">已使用</span>
           </template>
         </el-table-column>
       </el-table>

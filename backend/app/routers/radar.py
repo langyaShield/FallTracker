@@ -11,9 +11,7 @@ Crawler / radar HTTP endpoints.
 本文件仅保留 HTTP 路由层：参数解析 / 鉴权 / 数据库 CRUD / 派发到后台任务。
 re-export `check_and_run_due_crawlers` 与 `execute_crawler` 以保持 main.py 与历史调用方不变。
 """
-import json
-import os
-from typing import Any, Dict, List
+from typing import List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
@@ -31,43 +29,10 @@ from app.schemas import (
 # 重新导出供 main.py 的 scheduler tick 与测试用例使用
 from app.services.radar.engine import execute_crawler as _execute_crawler  # noqa: F401
 from app.services.radar.scheduler import check_and_run_due_crawlers  # noqa: F401
+from app.services.radar.scheduler import _execute_with_lock as _run_crawler_locked  # noqa: F401
 from app.ratelimit import limiter
 
 router = APIRouter(prefix="/radar", tags=["radar"])
-
-# 爬虫模板目录
-_SPIDERS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "spiders")
-
-
-# ─────────────────────────────────────────────
-#  Templates
-# ─────────────────────────────────────────────
-
-
-@router.get("/templates")
-def list_templates():
-    """列出可用的爬虫模板，供前端快速创建使用。AI驱动模式：不再返回CSS选择器。"""
-    templates: List[Dict[str, Any]] = []
-    if not os.path.isdir(_SPIDERS_DIR):
-        return templates
-    for fname in sorted(os.listdir(_SPIDERS_DIR)):
-        if not fname.endswith(".json") or fname == "sample-template.json" or fname == "regex-example.json":
-            continue
-        fpath = os.path.join(_SPIDERS_DIR, fname)
-        try:
-            with open(fpath, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            templates.append({
-                "id": data.get("id", fname),
-                "name": data.get("name", fname),
-                "description": data.get("description", ""),
-                "url": data.get("request", {}).get("url", ""),
-                "suggested_target": data.get("suggested_target", ""),
-                "site_tips": data.get("site_tips", []),
-            })
-        except Exception:
-            continue
-    return templates
 
 
 # ─────────────────────────────────────────────
@@ -176,9 +141,10 @@ def run_crawler_manual(
     if not config:
         raise HTTPException(status_code=404, detail="爬虫配置不存在")
 
-    background_tasks.add_task(_execute_crawler, config_id)
+    background_tasks.add_task(_run_crawler_locked, config_id)
     # 注意：last_run_at 由 engine.execute_crawler 统一设置，
-    # 不在此处提前写入，避免爬虫失败时调度器跳过重试
+    # 不在此处提前写入，避免爬虫失败时调度器跳过重试。
+    # 手动触发与定时任务统一走 _execute_with_lock，保证爬取+AI分析逻辑完全一致（含并发保护）。
     return {"detail": "爬虫已开始运行，请稍后查看结果"}
 
 
