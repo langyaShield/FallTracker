@@ -24,7 +24,7 @@ RUN (sed -i 's|http://deb.debian.org/debian|https://mirrors.aliyun.com/debian|g;
      sed -i 's|http://deb.debian.org/debian|https://mirrors.aliyun.com/debian|g; s|http://security.debian.org/debian-security|https://mirrors.aliyun.com/debian-security|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null) && \
     apt-get update --allow-releaseinfo-change
 
-# Install system deps: tesseract (OCR), fonts, and cleanup
+# Install system deps: tesseract (OCR), fonts, Playwright/Chromium deps, and cleanup
 # Retry up to 3 times in case of transient mirror errors
 RUN for i in 1 2 3; do \
         apt-get install -y --no-install-recommends \
@@ -36,6 +36,25 @@ RUN for i in 1 2 3; do \
             libxrender-dev \
             libgomp1 \
             poppler-utils \
+            libcurl4 \
+            libnss3 \
+            libnspr4 \
+            libatk1.0-0t64 \
+            libatk-bridge2.0-0t64 \
+            libcups2t64 \
+            libdrm2 \
+            libdbus-1-3 \
+            libxkbcommon0 \
+            libgbm1 \
+            libasound2t64 \
+            libpango-1.0-0 \
+            libcairo2 \
+            fonts-liberation \
+            fonts-noto-color-emoji \
+            libxcomposite1 \
+            libxdamage1 \
+            libxfixes3 \
+            libxrandr2 \
         && break \
         || { echo "Attempt $i failed, retrying..."; sleep 2; }; \
     done && \
@@ -46,6 +65,9 @@ RUN for i in 1 2 3; do \
 COPY backend/requirements.txt ./backend/
 RUN pip config set global.index-url https://mirrors.cloud.tencent.com/pypi/simple && \
     pip install --no-cache-dir -r backend/requirements.txt
+
+# Install Playwright Chromium browser (with system deps already installed above)
+RUN python -m playwright install chromium
 
 COPY backend/ ./backend/
 
