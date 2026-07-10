@@ -24,6 +24,12 @@ from app.schemas import (
     CrawlerConfigOut,
     CrawlerConfigUpdate,
     CrawlerResultOut,
+    RadarTestFetchRequest,
+    RadarTestFetchResponse,
+    RadarTestAnalyzeRequest,
+    RadarTestAnalyzeResponse,
+    RadarTestFullRequest,
+    RadarTestFullResponse,
 )
 
 # 重新导出供 main.py 的 scheduler tick 与测试用例使用
@@ -174,4 +180,118 @@ def list_results(
         .order_by(CrawlerResult.created_at.desc())
         .limit(limit)
         .all()
+    )
+
+
+# ─────────────────────────────────────────────
+#  Test Panel Endpoints
+# ─────────────────────────────────────────────
+
+import time as _time  # noqa: E402
+
+from app.services.radar.fetcher import fetch_page, fetch_page_curl_only, fetch_page_browser_only, FETCH_ENGINE, get_last_engine  # noqa: E402
+from app.services.radar.llm import analyze_with_llm, fetch_user_llm_config  # noqa: E402
+
+
+@router.post("/test/fetch", response_model=RadarTestFetchResponse)
+def test_fetch(
+    req: RadarTestFetchRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """测试页面抓取：输入URL，返回 HTML->Markdown 转换结果"""
+    t0 = _time.time()
+    extra_headers = None
+    if req.extra_headers:
+        try:
+            extra_headers = json.loads(req.extra_headers)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    content, status_code, error = fetch_page(req.url, extra_headers=extra_headers)
+    elapsed_ms = round((_time.time() - t0) * 1000, 1)
+
+    return RadarTestFetchResponse(
+        success=bool(content and not content.startswith("(页面")),
+        elapsed_ms=elapsed_ms,
+        status_code=status_code,
+        content_length=len(content),
+        content=content,
+        error=error,
+        engine=FETCH_ENGINE,
+        engine_used=get_last_engine(),
+    )
+
+
+@router.post("/test/analyze", response_model=RadarTestAnalyzeResponse)
+def test_analyze(
+    req: RadarTestAnalyzeRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """测试LLM分析：输入目标描述+页面内容，返回分析结果"""
+    t0 = _time.time()
+    llm_config = fetch_user_llm_config(current_user.id)
+    analysis = analyze_with_llm(req.target_description, req.content, llm_config)
+    elapsed_ms = round((_time.time() - t0) * 1000, 1)
+
+    has_error = "error" in analysis or analysis.get("summary", "").startswith("LLM")
+    return RadarTestAnalyzeResponse(
+        success=not has_error,
+        elapsed_ms=elapsed_ms,
+        analysis=analysis,
+        error=analysis.get("summary", "") if has_error else "",
+    )
+
+
+@router.post("/test/full", response_model=RadarTestFullResponse)
+def test_full(
+    req: RadarTestFullRequest,
+    current_user: User = Depends(get_current_user),
+):
+    """全流程测试：抓取 + LLM分析"""
+    t0 = _time.time()
+
+    # Step 1: Fetch
+    t_fetch = _time.time()
+    extra_headers = None
+    if req.extra_headers:
+        try:
+            extra_headers = json.loads(req.extra_headers)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    content, status_code, error = fetch_page(req.url, extra_headers=extra_headers)
+    fetch_elapsed = round((_time.time() - t_fetch) * 1000, 1)
+
+    fetch_result = RadarTestFetchResponse(
+        success=bool(content and not content.startswith("(页面")),
+        elapsed_ms=fetch_elapsed,
+        status_code=status_code,
+        content_length=len(content),
+        content=content,
+        error=error,
+        engine=FETCH_ENGINE,
+        engine_used=get_last_engine(),
+    )
+
+    # Step 2: Analyze
+    t_analyze = _time.time()
+    llm_config = fetch_user_llm_config(current_user.id)
+    analysis = analyze_with_llm(req.target_description, content, llm_config)
+    analyze_elapsed = round((_time.time() - t_analyze) * 1000, 1)
+
+    has_error = "error" in analysis or analysis.get("summary", "").startswith("LLM")
+    analyze_result = RadarTestAnalyzeResponse(
+        success=not has_error,
+        elapsed_ms=analyze_elapsed,
+        analysis=analysis,
+        error=analysis.get("summary", "") if has_error else "",
+    )
+
+    total_elapsed = round((_time.time() - t0) * 1000, 1)
+
+    return RadarTestFullResponse(
+        success=fetch_result.success and analyze_result.success,
+        total_elapsed_ms=total_elapsed,
+        fetch=fetch_result,
+        analyze=analyze_result,
     )

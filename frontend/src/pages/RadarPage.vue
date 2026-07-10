@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Plus, VideoPlay, VideoPause, Edit, Delete } from '@element-plus/icons-vue'
+import { Plus, VideoPlay, VideoPause, Edit, Delete, CaretRight, Loading } from '@element-plus/icons-vue'
 import api from '@/lib/api'
 import { formatLocaleDateTime } from '@/lib/format'
 import { STATUS_COLUMNS } from '@/lib/constants'
@@ -50,6 +50,40 @@ interface CrawlerResult {
   created_at: string
 }
 
+interface CrawlerTemplate {
+  id: string
+  name: string
+  description: string
+  url: string
+  suggested_target: string
+  site_tips: string[]
+}
+
+// ========== Test Panel Types ==========
+interface TestFetchResult {
+  success: boolean
+  elapsed_ms: number
+  status_code: number
+  content_length: number
+  content: string
+  error: string
+  engine: string
+  engine_used: string
+}
+
+interface TestAnalyzeResult {
+  success: boolean
+  elapsed_ms: number
+  analysis: Record<string, any>
+  error: string
+}
+
+interface TestFullResult {
+  success: boolean
+  total_elapsed_ms: number
+  fetch: TestFetchResult
+  analyze: TestAnalyzeResult
+}
 // ========== Tab State ==========
 const activeTab = ref('configs')
 
@@ -324,6 +358,112 @@ function analysisSummary(analysis: any): string {
 
 // ========== Email Settings Tab ==========
 const emailLoading = ref(false)
+
+// ========== Test Panel State ==========
+// Test 1: Fetch
+const testFetchUrl = ref('')
+const testFetchExtraHeaders = ref('')
+const testFetchLoading = ref(false)
+const testFetchResult = ref<TestFetchResult | null>(null)
+
+// Test 2: Analyze
+const testAnalyzeTarget = ref('')
+const testAnalyzeContent = ref('')
+const testAnalyzeLoading = ref(false)
+const testAnalyzeResult = ref<TestAnalyzeResult | null>(null)
+
+// Test 3: Full
+const testFullUrl = ref('')
+const testFullTarget = ref('')
+const testFullExtraHeaders = ref('')
+const testFullLoading = ref(false)
+const testFullResult = ref<TestFullResult | null>(null)
+
+// ========== Test Panel Methods ==========
+
+// Test 1: Page Fetch
+async function runTestFetch() {
+  if (!testFetchUrl.value) {
+    ElMessage.warning('请输入目标网址')
+    return
+  }
+  testFetchLoading.value = true
+  testFetchResult.value = null
+  try {
+    const payload: any = { url: testFetchUrl.value }
+    if (testFetchExtraHeaders.value.trim()) {
+      payload.extra_headers = testFetchExtraHeaders.value
+    }
+    const res = await api.post('/radar/test/fetch', payload)
+    testFetchResult.value = res.data
+  } catch (e: any) {
+    ElMessage.error(extractErrorMessage(e, '抓取测试失败'))
+  } finally {
+    testFetchLoading.value = false
+  }
+}
+
+// 将抓取结果填入分析测试的 content 字段
+function useFetchResultForAnalyze() {
+  if (testFetchResult.value?.content) {
+    testAnalyzeContent.value = testFetchResult.value.content
+    ElMessage.success('已填入抓取内容，可在下方"LLM分析测试"中测试')
+  }
+}
+
+// Test 2: LLM Analyze
+async function runTestAnalyze() {
+  if (!testAnalyzeTarget.value) {
+    ElMessage.warning('请输入目标描述')
+    return
+  }
+  if (!testAnalyzeContent.value) {
+    ElMessage.warning('请输入页面内容')
+    return
+  }
+  testAnalyzeLoading.value = true
+  testAnalyzeResult.value = null
+  try {
+    const res = await api.post('/radar/test/analyze', {
+      target_description: testAnalyzeTarget.value,
+      content: testAnalyzeContent.value,
+    })
+    testAnalyzeResult.value = res.data
+  } catch (e: any) {
+    ElMessage.error(extractErrorMessage(e, 'LLM分析测试失败'))
+  } finally {
+    testAnalyzeLoading.value = false
+  }
+}
+
+// Test 3: Full Pipeline
+async function runTestFull() {
+  if (!testFullUrl.value) {
+    ElMessage.warning('请输入目标网址')
+    return
+  }
+  if (!testFullTarget.value) {
+    ElMessage.warning('请输入目标描述')
+    return
+  }
+  testFullLoading.value = true
+  testFullResult.value = null
+  try {
+    const payload: any = {
+      url: testFullUrl.value,
+      target_description: testFullTarget.value,
+    }
+    if (testFullExtraHeaders.value.trim()) {
+      payload.extra_headers = testFullExtraHeaders.value
+    }
+    const res = await api.post('/radar/test/full', payload)
+    testFullResult.value = res.data
+  } catch (e: any) {
+    ElMessage.error(extractErrorMessage(e, '全流程测试失败'))
+  } finally {
+    testFullLoading.value = false
+  }
+}
 
 // ========== Lifecycle ==========
 onMounted(() => {
@@ -662,6 +802,271 @@ onMounted(() => {
       <el-tab-pane label="通知设置" name="email">
         <RadarEmailSettings v-model:loading="emailLoading" />
       </el-tab-pane>
+
+      <!-- ========== Tab 4: 功能测试 ========== -->
+      <el-tab-pane label="功能测试" name="test">
+        <div class="test-panel">
+
+          <!-- 测试区域1: 页面抓取测试 -->
+          <el-card class="test-card" shadow="never">
+            <template #header>
+              <div class="test-card-header">
+                <span class="test-card-title">1. 页面抓取测试</span>
+                <el-tag size="small" type="info">测试网页抓取 + HTML转Markdown</el-tag>
+              </div>
+            </template>
+            <div class="test-card-body">
+              <div class="test-form">
+                <div class="test-form-row">
+                  <el-input
+                    v-model="testFetchUrl"
+                    placeholder="输入目标网址，如 https://www.zhipin.com/web/geek/job?query=前端"
+                    clearable
+                    class="test-input"
+                  />
+                  <el-button
+                    type="primary"
+                    :loading="testFetchLoading"
+                    :icon="CaretRight"
+                    @click="runTestFetch"
+                  >
+                    开始抓取
+                  </el-button>
+                </div>
+                <el-collapse class="test-advanced">
+                  <el-collapse-item title="高级选项（自定义请求头）" name="headers">
+                    <el-input
+                      v-model="testFetchExtraHeaders"
+                      type="textarea"
+                      :rows="2"
+                      placeholder='JSON格式，如 {"Cookie": "..."}'
+                    />
+                  </el-collapse-item>
+                </el-collapse>
+              </div>
+
+              <!-- 抓取结果 -->
+              <div v-if="testFetchResult" class="test-result">
+                <div class="test-result-header">
+                  <el-tag :type="testFetchResult.success ? 'success' : 'danger'" size="small">
+                    {{ testFetchResult.success ? '成功' : '失败' }}
+                  </el-tag>
+                  <span class="test-elapsed">耗时 {{ testFetchResult.elapsed_ms }}ms</span>
+                  <span class="test-meta">HTTP {{ testFetchResult.status_code }}</span>
+                  <span class="test-meta">内容长度 {{ testFetchResult.content_length }} 字符</span>
+                  <span v-if="testFetchResult.engine_used" class="test-meta test-engine">
+                    引擎: {{ testFetchResult.engine_used }}
+                  </span>
+                  <el-button
+                    v-if="testFetchResult.success && testFetchResult.content"
+                    size="small"
+                    type="success"
+                    plain
+                    @click="useFetchResultForAnalyze"
+                  >
+                    填入分析测试
+                  </el-button>
+                </div>
+                <div v-if="testFetchResult.error" class="test-error">{{ testFetchResult.error }}</div>
+                <div v-if="testFetchResult.content" class="test-content-box">
+                  <div class="test-content-label">抓取内容预览（Markdown格式）</div>
+                  <pre class="test-content-pre">{{ testFetchResult.content.substring(0, 3000) }}{{ testFetchResult.content.length > 3000 ? '\n...(内容过长已截断预览)' : '' }}</pre>
+                </div>
+              </div>
+              <div v-if="testFetchLoading" class="test-loading">
+                <el-icon class="is-loading"><Loading /></el-icon>
+                <span>正在抓取页面，请稍候...</span>
+              </div>
+            </div>
+          </el-card>
+
+          <!-- 测试区域2: LLM分析测试 -->
+          <el-card class="test-card" shadow="never">
+            <template #header>
+              <div class="test-card-header">
+                <span class="test-card-title">2. LLM 分析测试</span>
+                <el-tag size="small" type="info">测试AI分析 + 目标匹配</el-tag>
+              </div>
+            </template>
+            <div class="test-card-body">
+              <div class="test-form">
+                <div class="test-form-row">
+                  <el-input
+                    v-model="testAnalyzeTarget"
+                    placeholder="输入目标描述，如：前端开发实习岗位，薪资8k以上"
+                    clearable
+                    class="test-input"
+                  />
+                </div>
+                <div class="test-form-row">
+                  <el-input
+                    v-model="testAnalyzeContent"
+                    type="textarea"
+                    :rows="6"
+                    placeholder="输入页面内容（可从上方抓取测试结果自动填入），或手动粘贴"
+                  />
+                </div>
+                <div class="test-form-actions">
+                  <el-button
+                    type="primary"
+                    :loading="testAnalyzeLoading"
+                    :icon="CaretRight"
+                    @click="runTestAnalyze"
+                  >
+                    开始分析
+                  </el-button>
+                </div>
+              </div>
+
+              <!-- 分析结果 -->
+              <div v-if="testAnalyzeResult" class="test-result">
+                <div class="test-result-header">
+                  <el-tag :type="testAnalyzeResult.success ? 'success' : 'danger'" size="small">
+                    {{ testAnalyzeResult.success ? '成功' : '失败' }}
+                  </el-tag>
+                  <span class="test-elapsed">耗时 {{ testAnalyzeResult.elapsed_ms }}ms</span>
+                  <el-tag
+                    v-if="testAnalyzeResult.analysis?.target_found"
+                    type="warning"
+                    size="small"
+                    effect="dark"
+                  >
+                    匹配到目标
+                  </el-tag>
+                  <el-tag v-else-if="testAnalyzeResult.success" type="info" size="small">未匹配</el-tag>
+                </div>
+                <div v-if="testAnalyzeResult.error" class="test-error">{{ testAnalyzeResult.error }}</div>
+                <div v-if="testAnalyzeResult.analysis" class="test-content-box">
+                  <div class="test-content-label">分析摘要</div>
+                  <p class="test-summary">{{ testAnalyzeResult.analysis.summary || '无摘要' }}</p>
+                  <div v-if="testAnalyzeResult.analysis.matched_items?.length" class="test-matched">
+                    <div class="test-content-label">匹配职位 ({{ testAnalyzeResult.analysis.matched_items.length }})</div>
+                    <el-table :data="testAnalyzeResult.analysis.matched_items" size="small" stripe>
+                      <el-table-column prop="company" label="公司" min-width="100" />
+                      <el-table-column prop="position" label="岗位" min-width="120" />
+                      <el-table-column prop="salary" label="薪资" width="100" />
+                      <el-table-column prop="location" label="地点" width="80" />
+                      <el-table-column prop="match_reason" label="匹配原因" min-width="150" />
+                    </el-table>
+                  </div>
+                  <div class="test-content-label">完整分析结果</div>
+                  <pre class="test-content-pre">{{ JSON.stringify(testAnalyzeResult.analysis, null, 2) }}</pre>
+                </div>
+              </div>
+              <div v-if="testAnalyzeLoading" class="test-loading">
+                <el-icon class="is-loading"><Loading /></el-icon>
+                <span>正在调用 LLM 分析，请稍候...</span>
+              </div>
+            </div>
+          </el-card>
+
+          <!-- 测试区域3: 全流程一键测试 -->
+          <el-card class="test-card" shadow="never">
+            <template #header>
+              <div class="test-card-header">
+                <span class="test-card-title">3. 全流程一键测试</span>
+                <el-tag size="small" type="warning">抓取 + 分析全流程</el-tag>
+              </div>
+            </template>
+            <div class="test-card-body">
+              <div class="test-form">
+                <div class="test-form-row">
+                  <el-input
+                    v-model="testFullUrl"
+                    placeholder="输入目标网址"
+                    clearable
+                    class="test-input"
+                  />
+                </div>
+                <div class="test-form-row">
+                  <el-input
+                    v-model="testFullTarget"
+                    placeholder="输入目标描述"
+                    clearable
+                    class="test-input"
+                  />
+                </div>
+                <el-collapse class="test-advanced">
+                  <el-collapse-item title="高级选项（自定义请求头）" name="headers">
+                    <el-input
+                      v-model="testFullExtraHeaders"
+                      type="textarea"
+                      :rows="2"
+                      placeholder='JSON格式'
+                    />
+                  </el-collapse-item>
+                </el-collapse>
+                <div class="test-form-actions">
+                  <el-button
+                    type="primary"
+                    :loading="testFullLoading"
+                    :icon="CaretRight"
+                    @click="runTestFull"
+                  >
+                    一键测试
+                  </el-button>
+                </div>
+              </div>
+
+              <!-- 全流程结果 -->
+              <div v-if="testFullResult" class="test-result">
+                <div class="test-result-header">
+                  <el-tag :type="testFullResult.success ? 'success' : 'danger'" size="small">
+                    {{ testFullResult.success ? '全流程成功' : '失败' }}
+                  </el-tag>
+                  <span class="test-elapsed">总耗时 {{ testFullResult.total_elapsed_ms }}ms</span>
+                </div>
+
+                <!-- Step 1: Fetch -->
+                <div class="test-step">
+                  <div class="test-step-header">
+                    <span class="test-step-label">Step 1: 页面抓取</span>
+                    <el-tag :type="testFullResult.fetch.success ? 'success' : 'danger'" size="small">
+                      {{ testFullResult.fetch.success ? '成功' : '失败' }}
+                    </el-tag>
+                    <span class="test-elapsed">{{ testFullResult.fetch.elapsed_ms }}ms</span>
+                    <span class="test-meta">HTTP {{ testFullResult.fetch.status_code }}</span>
+                    <span class="test-meta">{{ testFullResult.fetch.content_length }} 字符</span>
+                    <span v-if="testFullResult.fetch.engine_used" class="test-meta test-engine">
+                      引擎: {{ testFullResult.fetch.engine_used }}
+                    </span>
+                  </div>
+                  <div v-if="testFullResult.fetch.error" class="test-error">{{ testFullResult.fetch.error }}</div>
+                </div>
+
+                <!-- Step 2: Analyze -->
+                <div class="test-step">
+                  <div class="test-step-header">
+                    <span class="test-step-label">Step 2: LLM 分析</span>
+                    <el-tag :type="testFullResult.analyze.success ? 'success' : 'danger'" size="small">
+                      {{ testFullResult.analyze.success ? '成功' : '失败' }}
+                    </el-tag>
+                    <span class="test-elapsed">{{ testFullResult.analyze.elapsed_ms }}ms</span>
+                  </div>
+                  <div v-if="testFullResult.analyze.error" class="test-error">{{ testFullResult.analyze.error }}</div>
+                  <div v-if="testFullResult.analyze.analysis" class="test-content-box">
+                    <p class="test-summary">{{ testFullResult.analyze.analysis.summary || '无摘要' }}</p>
+                    <div v-if="testFullResult.analyze.analysis.matched_items?.length" class="test-matched">
+                      <div class="test-content-label">匹配职位 ({{ testFullResult.analyze.analysis.matched_items.length }})</div>
+                      <el-table :data="testFullResult.analyze.analysis.matched_items" size="small" stripe>
+                        <el-table-column prop="company" label="公司" min-width="100" />
+                        <el-table-column prop="position" label="岗位" min-width="120" />
+                        <el-table-column prop="salary" label="薪资" width="100" />
+                        <el-table-column prop="location" label="地点" width="80" />
+                      </el-table>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div v-if="testFullLoading" class="test-loading">
+                <el-icon class="is-loading"><Loading /></el-icon>
+                <span>正在执行全流程测试，请稍候...</span>
+              </div>
+            </div>
+          </el-card>
+
+        </div>
+      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
@@ -909,5 +1314,182 @@ onMounted(() => {
     flex-wrap: wrap;
     gap: 8px;
   }
+}
+
+/* ─── 功能测试面板 ─── */
+.test-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.test-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.test-card-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.test-card-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.test-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.test-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.test-form-row {
+  display: flex;
+  gap: 10px;
+}
+
+.test-input {
+  flex: 1;
+}
+
+.test-form-actions {
+  display: flex;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.test-advanced {
+  border: none;
+}
+
+.test-advanced :deep(.el-collapse-item__header) {
+  font-size: 13px;
+  color: #64748b;
+  border-bottom: none;
+  height: 32px;
+  line-height: 32px;
+}
+
+.test-advanced :deep(.el-collapse-item__wrap) {
+  border-bottom: none;
+}
+
+/* 测试结果区域 */
+.test-result {
+  border-top: 1px solid #e2e8f0;
+  padding-top: 16px;
+}
+
+.test-result-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.test-elapsed {
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.test-meta {
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.test-engine {
+  color: #409eff;
+  font-style: italic;
+}
+
+.test-error {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: #dc2626;
+  margin-bottom: 12px;
+}
+
+.test-content-box {
+  margin-top: 8px;
+}
+
+.test-content-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #475569;
+  margin-bottom: 6px;
+}
+
+.test-content-pre {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  max-height: 400px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: #334155;
+}
+
+.test-summary {
+  font-size: 13px;
+  color: #334155;
+  line-height: 1.5;
+  margin: 0 0 8px 0;
+  padding: 8px 12px;
+  background: #f0f7ff;
+  border-radius: 6px;
+  border: 1px solid #dbeafe;
+}
+
+.test-matched {
+  margin-top: 12px;
+}
+
+.test-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 20px;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.test-step {
+  margin-top: 16px;
+  padding: 12px;
+  background: #f8fafc;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+}
+
+.test-step-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.test-step-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
 }
 </style>

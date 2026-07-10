@@ -28,8 +28,8 @@ logger = logging.getLogger("falltracker.radar.scheduler")
 _running_configs: set[int] = set()
 _running_lock = threading.Lock()
 
-# 爬虫执行线程池（最大并发数）
-_EXECUTOR = ThreadPoolExecutor(max_workers=4, thread_name_prefix="crawler")
+# 爬虫执行线程池（最大并发数，Playwright 模式下降为 1 避免 OOM）
+_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="crawler")
 
 
 def _execute_with_lock(config_id: int) -> None:

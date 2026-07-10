@@ -17,6 +17,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import func, Text
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
@@ -98,7 +99,7 @@ def list_deliveries(
         q = q.filter(Delivery.status == status)
     if tag:
         safe_tag = tag.replace("%", "\\%").replace("_", "\\_")
-        q = q.filter(Delivery.tags.cast(str).contains(f'"{safe_tag}"'))
+        q = q.filter(func.coalesce(Delivery.tags.cast(Text), "").contains(f'"{safe_tag}"'))
     if search:
         safe_search = search.replace("%", "\\%").replace("_", "\\_")
         pattern = f"%{safe_search}%"
@@ -106,7 +107,7 @@ def list_deliveries(
             or_(
                 Delivery.company.ilike(pattern),
                 Delivery.position.ilike(pattern),
-                Delivery.tags.cast(str).ilike(pattern),
+                func.coalesce(Delivery.tags.cast(Text), "").ilike(pattern),
             )
         )
     if deadline_before:

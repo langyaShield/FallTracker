@@ -276,8 +276,7 @@ onMounted(() => {
 
 <style scoped>
 .bookmarks-page {
-  max-width: 1200px;
-  margin: 0 auto;
+  /* max-width removed — title should align left like other pages */
 }
 
 .page-header {
@@ -312,10 +311,12 @@ onMounted(() => {
 }
 
 .empty-state {
+  max-width: 1200px;
   padding: 60px 0;
 }
 
 .bookmark-group {
+  max-width: 1200px;
   margin-bottom: 32px;
 }
 

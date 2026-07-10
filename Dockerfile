@@ -67,7 +67,9 @@ RUN pip config set global.index-url https://mirrors.cloud.tencent.com/pypi/simpl
     pip install --no-cache-dir -r backend/requirements.txt
 
 # Install Playwright Chromium browser (with system deps already installed above)
-RUN python -m playwright install chromium
+# Use npmmirror to accelerate download in CN networks
+RUN PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright/ \
+    python -m playwright install chromium
 
 COPY backend/ ./backend/
 

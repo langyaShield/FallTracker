@@ -581,3 +581,47 @@ class DeliveryNoteOut(BaseModel):
 class TagCountOut(BaseModel):
     tag: str
     count: int
+
+
+# === Radar Test Panel Schemas ===
+
+
+class RadarTestFetchRequest(BaseModel):
+    url: str
+    extra_headers: Optional[str] = None  # JSON string, 可选
+
+
+class RadarTestFetchResponse(BaseModel):
+    success: bool
+    elapsed_ms: float
+    status_code: int
+    content_length: int
+    content: str  # Markdown 转换后的文本
+    error: str = ""  # 失败时的错误信息
+    engine: str = ""  # 抓取引擎标识
+    engine_used: str = ""  # 实际使用的引擎（curl_cffi / Playwright / failed）
+
+
+class RadarTestAnalyzeRequest(BaseModel):
+    target_description: str
+    content: str
+
+
+class RadarTestAnalyzeResponse(BaseModel):
+    success: bool
+    elapsed_ms: float
+    analysis: dict  # LLM 返回的结构化分析结果
+    error: str = ""
+
+
+class RadarTestFullRequest(BaseModel):
+    url: str
+    target_description: str
+    extra_headers: Optional[str] = None
+
+
+class RadarTestFullResponse(BaseModel):
+    success: bool
+    total_elapsed_ms: float
+    fetch: RadarTestFetchResponse
+    analyze: RadarTestAnalyzeResponse

@@ -35,6 +35,7 @@ interface Resume {
 const deliveries = ref<Delivery[]>([])
 const resumes = ref<Resume[]>([])
 const loading = ref(false)
+const initialLoading = ref(true)  // 仅首次加载显示骨架屏，后续搜索/排序静默刷新
 const dialogVisible = ref(false)
 const editing = ref<Partial<Delivery>>({})
 
@@ -65,7 +66,6 @@ watch(searchQuery, (val) => {
   }, 300)
 })
 
-const activeStatusFilters = ref<Set<string>>(new Set())
 const sortOption = ref('created_at_desc')
 
 const sortOptions = [
@@ -76,25 +76,14 @@ const sortOptions = [
   { label: '公司 A-Z', value: 'company_asc' },
 ]
 
-const toggleStatusFilter = (key: string) => {
-  const s = new Set(activeStatusFilters.value)
-  if (s.has(key)) {
-    s.delete(key)
-  } else {
-    s.add(key)
-  }
-  activeStatusFilters.value = s
-}
-
 const clearFilters = () => {
   searchQuery.value = ''
   debouncedSearch.value = ''
-  activeStatusFilters.value = new Set()
   sortOption.value = 'created_at_desc'
 }
 
 const hasActiveFilters = computed(() => {
-  return debouncedSearch.value !== '' || activeStatusFilters.value.size > 0
+  return debouncedSearch.value !== ''
 })
 
 // Build query params from current filter state and fetch from backend
@@ -105,11 +94,6 @@ const buildQueryParams = () => {
   const q = debouncedSearch.value.trim()
   if (q) {
     params.search = q
-  }
-
-  // status filter — backend supports List[str] via repeated query param
-  if (activeStatusFilters.value.size > 0) {
-    params.status = Array.from(activeStatusFilters.value)
   }
 
   // sort
@@ -416,7 +400,10 @@ const groupedDeliveries = computed(() => {
 })
 
 const fetchDeliveries = async () => {
-  loading.value = true
+  // 首次加载显示骨架屏，后续搜索/排序静默刷新保留旧数据
+  if (initialLoading.value) {
+    loading.value = true
+  }
   try {
     const params = buildQueryParams()
     const res = await api.get('/deliveries', { params })
@@ -425,11 +412,12 @@ const fetchDeliveries = async () => {
     ElMessage.error(extractErrorMessage(e, '获取投递列表失败'))
   } finally {
     loading.value = false
+    initialLoading.value = false
   }
 }
 
-// Re-fetch when search/sort/status filters change
-watch([debouncedSearch, sortOption, activeStatusFilters], () => {
+// Re-fetch when search/sort filters change
+watch([debouncedSearch, sortOption], () => {
   fetchDeliveries()
 })
 
@@ -512,18 +500,6 @@ onMounted(() => {
           clearable
           class="search-input"
         />
-        <div class="status-filters">
-          <el-button
-            v-for="col in STATUS_COLUMNS"
-            :key="col.key"
-            :type="activeStatusFilters.has(col.key) ? 'primary' : 'default'"
-            size="small"
-            @click="toggleStatusFilter(col.key)"
-            class="status-filter-btn"
-          >
-            {{ col.label }}
-          </el-button>
-        </div>
         <el-select v-model="sortOption" placeholder="排序" class="sort-select">
           <el-option
             v-for="opt in sortOptions"
@@ -575,8 +551,8 @@ onMounted(() => {
 
     <!-- Kanban view -->
     <template v-else-if="viewMode === 'kanban'">
-      <!-- Skeleton loading state -->
-      <div v-if="loading" class="kanban-board" :class="{ 'batch-mode': batchMode }">
+      <!-- Skeleton loading state (only on initial load) -->
+      <div v-if="initialLoading" class="kanban-board" :class="{ 'batch-mode': batchMode }">
         <div v-for="col in STATUS_COLUMNS" :key="col.key" class="kanban-column skeleton-column">
           <div class="column-header" :style="{ borderColor: col.color }">
             <el-skeleton :rows="0" animated>
@@ -693,7 +669,7 @@ onMounted(() => {
     </template>
 
     <!-- List view -->
-    <div v-else v-loading="loading" class="list-view" :class="{ 'batch-mode': batchMode }">
+    <div v-else v-loading="initialLoading" class="list-view" :class="{ 'batch-mode': batchMode }">
       <el-table
         :data="sortedListDeliveries"
         style="width: 100%"
@@ -887,16 +863,6 @@ onMounted(() => {
 .search-input {
   max-width: 240px;
   width: 100%;
-}
-
-.status-filters {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.status-filter-btn {
-  border-radius: 16px;
 }
 
 .sort-select {

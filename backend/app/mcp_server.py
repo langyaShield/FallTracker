@@ -31,6 +31,7 @@ from typing import Any, Optional
 from fastapi import HTTPException
 from jose import JWTError, jwt
 from mcp.server.fastmcp import Context, FastMCP
+from sqlalchemy import func, Text
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -229,7 +230,7 @@ async def list_deliveries(
                 q = q.filter(Delivery.status == status)
             if tag:
                 safe_tag = tag.replace("%", "\\%").replace("_", "\\_")
-                q = q.filter(Delivery.tags.cast(str).contains(f'"{safe_tag}"'))
+                q = q.filter(func.coalesce(Delivery.tags.cast(Text), "").contains(f'"{safe_tag}"'))
             if search:
                 safe_search = search.replace("%", "\\%").replace("_", "\\_")
                 pattern = f"%{safe_search}%"
@@ -237,7 +238,7 @@ async def list_deliveries(
                     or_(
                         Delivery.company.ilike(pattern),
                         Delivery.position.ilike(pattern),
-                        Delivery.tags.cast(str).ilike(pattern),
+                        func.coalesce(Delivery.tags.cast(Text), "").ilike(pattern),
                     )
                 )
             if deadline_before:

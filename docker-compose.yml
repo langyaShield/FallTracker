@@ -28,6 +28,8 @@ services:
     mem_swappiness: 0
     # Stop gracefully within 10 seconds
     stop_grace_period: 10s
+    # Shared memory for Chromium/Playwright
+    shm_size: 256m
 
     ports:
       # 公网访问：http://YOUR_SERVER_IP

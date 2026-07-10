@@ -9,7 +9,7 @@ logger = logging.getLogger("falltracker")
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, UploadFile, File
 from fastapi.responses import StreamingResponse
-from sqlalchemy import or_
+from sqlalchemy import func, or_, Text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -84,10 +84,11 @@ def list_deliveries(
         safe_search = search.replace("%", "\\%").replace("_", "\\_")
         pattern = f"%{safe_search}%"
         # Search company, position, and tags
+        # Use coalesce to handle NULL tags, and cast to Text for SQLite JSON compatibility
         q = q.filter(or_(
             Delivery.company.ilike(pattern),
             Delivery.position.ilike(pattern),
-            Delivery.tags.cast(str).ilike(pattern),
+            func.coalesce(Delivery.tags.cast(Text), "").ilike(pattern),
         ))
 
     if status:
@@ -96,7 +97,7 @@ def list_deliveries(
     if tag:
         # Escape SQL LIKE wildcards in tag value
         safe_tag = tag.replace("%", "\\%").replace("_", "\\_")
-        q = q.filter(Delivery.tags.cast(str).contains(f'"{safe_tag}"'))
+        q = q.filter(func.coalesce(Delivery.tags.cast(Text), "").contains(f'"{safe_tag}"'))
 
     if deadline_before:
         q = q.filter(Delivery.deadline <= deadline_before)

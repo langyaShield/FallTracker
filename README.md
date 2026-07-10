@@ -22,10 +22,17 @@
 
 - **CSV 批量导入** — 上传 CSV 文件一次导入数十条投递，支持中英文表头自动映射，预览确认后导入
 - **CSV 数据导出** — 一键导出投递数据为 CSV 文件，方便分享给导师或存档
-- **看板搜索 + 多维筛选** — 关键词搜索、状态筛选、标签过滤、排序，100+ 投递时快速定位
+- **看板搜索 + 排序** — 关键词搜索（公司、岗位、标签），支持多种排序方式，100+ 投递时快速定位
 - **批量操作** — 多选卡片批量更新状态、添加/移除标签、批量删除
 - **截止日期智能预警** — 首页紧急 deadline 看板（三级紧急度着色 + 倒计时），看板卡片紧急度标识
 - **面试/截止双重提醒** — 面试 24h 提醒 + 截止 48h 提醒，站内通知 + 日历告警
+
+### MCP / Agent API
+
+- **MCP Server** — 基于 Model Context Protocol 的标准化工具接口，供 Hermes 等 AI Agent 调用，覆盖投递、面试、简历、复盘、通知、统计等全部核心功能
+- **Agent REST API** — `/api/agent/` 前缀的 HTTP JSON 接口，提供与 MCP 相同的能力，方便调试和作为 MCP 不可用时的后备方案
+- **双认证模式** — 支持固定 API KEY（MCP 客户端免登录）和 JWT Bearer Token 两种认证方式
+- **19 个 MCP 工具** — 涵盖 Deliveries（7个）、Events（4个）、Profile（2个）、Resumes（3个）、Reviews（3个）、Notifications（2个）、Bookmarks（1个）、Statistics（1个）
 
 ### 数据备份
 
@@ -116,18 +123,19 @@ FallTracker/
 │       └── ci.yml                  # GitHub Actions CI（pytest + vue-tsc + build）
 ├── backend/
 │   ├── app/
-│   │   ├── main.py                # FastAPI 应用入口、路由注册、异常处理、SPA 静态服务
-│   │   ├── config.py              # 环境变量配置
+│   │   ├── main.py                # FastAPI 应用入口、路由注册、异常处理、MCP 中间件、SPA 静态服务
+│   │   ├── config.py              # 环境变量配置（含 MCP_API_KEY）
 │   │   ├── database.py            # 数据库引擎 & 会话
-│   │   ├── models.py              # SQLAlchemy 数据模型（11 张表）
+│   │   ├── models.py              # SQLAlchemy 数据模型（14 张表）
 │   │   ├── schemas.py             # Pydantic 请求/响应模型
 │   │   ├── auth.py                # JWT 令牌 & 密码工具 & 管理员鉴权 & 禁用检查
 │   │   ├── crypto.py              # Fernet 加密工具（敏感字段加解密）
 │   │   ├── ratelimit.py           # slowapi 速率限制实例
 │   │   ├── ocr.py                 # OCR 文本提取（PDF / 图片 / .docx）
+│   │   ├── mcp_server.py          # MCP Server（19 个工具，供 Hermes 等 AI Agent 调用）
 │   │   ├── routers/
 │   │   │   ├── auth.py            # 注册（邀请码校验）/ 登录 / 当前用户
-│   │   │   ├── deliveries.py      # 投递 CRUD + 筛选搜索 + 批量操作 + CSV 导入导出
+│   │   │   ├── deliveries.py      # 投递 CRUD + 搜索 + 批量操作 + CSV 导入导出
 │   │   │   ├── events.py          # 面试事件 CRUD + ICS 导出
 │   │   │   ├── resumes.py         # 简历上传 / OCR / 搜索 / 预览 / 批量删除 / 重新OCR / 下载
 │   │   │   ├── reviews.py         # 面试复盘 CRUD
@@ -136,7 +144,8 @@ FallTracker/
 │   │   │   ├── settings.py        # 用户设置（LLM / SMTP / COS，含加密）
 │   │   │   ├── backup.py          # 数据备份（本地导出导入 + COS 云端上传恢复 + 自动备份调度）
 │   │   │   ├── admin.py           # 管理员接口（用户管理 + 邀请码管理）
-│   │   │   └── notifications.py   # 站内通知 CRUD + 批量删除
+│   │   │   ├── notifications.py   # 站内通知 CRUD + 批量删除
+│   │   │   └── agent.py           # Agent REST API（与 MCP 相同能力的 HTTP JSON 接口）
 │   │   └── services/
 │   │       ├── notification_service.py  # 通知业务逻辑（独立 service 层）
 │   │       └── radar/
@@ -198,9 +207,13 @@ FallTracker/
 | `Resume` | 简历（文件路径、文件大小、文件类型、OCR 文本、OCR 状态与进度） |
 | `Review` | 面试复盘（原始笔记、结构化 Q&A、标签、反思） |
 | `Notification` | 站内通知（类型、标题、正文、是否已读） |
-| `CrawlerConfig` | 爬虫配置（URL、CSS 选择器、间隔、目标描述、邮件通知） |
-| `CrawlerResult` | 爬虫执行结果（原始文本、LLM 分析、是否命中、邮件状态） |
+| `CrawlerConfig` | 爬虫配置（URL、间隔、目标描述、邮件通知、连续失败计数） |
+| `CrawlerResult` | 爬虫执行结果（原始文本、LLM 分析、是否命中、邮件状态、结构化职位数据） |
 | `UserSettings` | 用户设置（LLM API、SMTP 邮件、COS 云端备份，敏感字段加密存储） |
+| `Bookmark` | 常用书签（标题、URL、分类、图标、排序） |
+| `ProfileField` | 个人信息库（键值对 + 分组，支持 basic/education 分类） |
+| `DeliveryLog` | 投递活动日志（状态变更、事件添加等操作记录） |
+| `DeliveryNote` | 投递备注/沟通记录 |
 
 投递状态流转：`待投递 → 已投递 → 笔试中 → 面试中 → 已Offer / 已终止`
 
@@ -213,7 +226,7 @@ FallTracker/
 | 模块 | 前缀 | 主要端点 |
 |------|------|----------|
 | auth | `/api/auth` | 注册（邀请码校验）、登录、获取当前用户、修改密码 |
-| deliveries | `/api/deliveries` | CRUD + 搜索筛选 + 批量状态/标签/删除 + CSV 导入/导出 + 截止查询 |
+| deliveries | `/api/deliveries` | CRUD + 搜索 + 批量状态/标签/删除 + CSV 导入/导出 + 截止查询 |
 | events | `/api/events` | 面试事件 CRUD + `GET /export.ics` 日历导出 |
 | resumes | `/api/resumes` | 上传、OCR、搜索、预览、重命名、文件替换、批量删除、重新OCR、下载 |
 | reviews | `/api/reviews` | CRUD + LLM 生成结构化 Q&A |
@@ -223,12 +236,14 @@ FallTracker/
 | backup | `/api/backup` | 本地导出/导入 + COS 云端上传/恢复/列表 |
 | admin | `/api/admin` | 用户列表/禁用/启用 + 邀请码生成/列表（仅管理员） |
 | notifications | `/api/notifications` | 列表、未读数、标记已读、删除、批量清空 |
+| agent | `/api/agent` | Agent REST API（投递/事件/简历/复盘/通知/书签/统计/个人信息库） |
+| MCP | `/mcp` | MCP Server（19 个工具，供 Hermes 等 AI Agent 调用） |
 
 ### deliveries 端点详情
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| `GET` | `/deliveries` | 列表（支持 search/status/tag/sort 筛选参数） |
+| `GET` | `/deliveries` | 列表（支持 search/tag/sort 参数） |
 | `POST` | `/deliveries` | 创建投递 |
 | `GET` | `/deliveries/upcoming-deadlines` | 未来 N 天截止的投递 |
 | `POST` | `/deliveries/import/preview` | CSV 预览（上传文件） |
@@ -263,7 +278,9 @@ FallTracker/
 | `DELETE` | `/admin/invite-codes/expired` | 清理所有已过期的邀请码 |
 
 健康检查：`GET /health`
+MCP 端点：`POST /mcp`（供 AI Agent 调用）
 OpenAPI 文档：`GET /docs`（Swagger UI）
+Agent API 文档：`GET /docs` 中查看 `/api/agent` 分组
 
 ---
 
@@ -352,6 +369,8 @@ UPDATE users SET is_admin = 1 WHERE username = '你的管理员用户名';
 | `LLM_API_KEY` | 空 | LLM API 密钥 |
 | `LLM_API_BASE` | `https://api.deepseek.com/v1` | LLM API 地址 |
 | `LLM_MODEL` | `deepseek-chat` | LLM 模型名称 |
+| `MCP_API_KEY` | 空 | MCP 固定 API KEY（设置后 Hermes 等客户端可免 JWT 登录） |
+| `MCP_API_USER_ID` | `1` | MCP API KEY 关联的用户 ID |
 
 ---
 
