@@ -37,7 +37,6 @@ const deliveries = ref<Delivery[]>([])
 const resumes = ref<Resume[]>([])
 const loading = ref(true)
 const initialLoading = ref(true)  // 仅首次加载显示骨架屏，后续搜索/排序静默刷新
-const dataReady = ref(false)  // 首次数据加载完成后才渲染内容
 const dialogVisible = ref(false)
 const editing = ref<Partial<Delivery>>({})
 
@@ -414,13 +413,7 @@ const fetchDeliveries = async () => {
     ElMessage.error(extractErrorMessage(e, '获取投递列表失败'))
   } finally {
     loading.value = false
-    if (initialLoading.value) {
-      // 骨架屏至少显示 300ms，避免闪现
-      setTimeout(() => {
-        initialLoading.value = false
-        dataReady.value = true
-      }, 300)
-    }
+    initialLoading.value = false
   }
 }
 
@@ -496,23 +489,6 @@ onMounted(() => {
 
 <template>
   <div class="dashboard-page">
-    <!-- 首次加载骨架屏 -->
-    <div v-if="!dataReady" class="kanban-board">
-      <div v-for="col in STATUS_COLUMNS" :key="col.key" class="kanban-column skeleton-column">
-        <div class="column-header" :style="{ borderColor: col.color }">
-          <el-skeleton :rows="0" animated>
-            <template #template>
-              <el-skeleton-item variant="text" style="width: 60px" />
-            </template>
-          </el-skeleton>
-        </div>
-        <div v-for="i in 3" :key="i" style="padding: 12px">
-          <el-skeleton :rows="3" animated />
-        </div>
-      </div>
-    </div>
-
-    <template v-if="dataReady">
     <PageHeader title="投递大盘">
       <el-button :icon="Upload" @click="importDialogVisible = true">导入</el-button>
       <el-button :icon="Download" @click="handleExport">导出</el-button>
@@ -560,8 +536,24 @@ onMounted(() => {
       </div>
     </div>
 
+    <!-- 首次加载骨架屏（仅在内容区域，页面结构保持稳定） -->
+    <div v-if="initialLoading" class="kanban-board">
+      <div v-for="col in STATUS_COLUMNS" :key="col.key" class="kanban-column skeleton-column">
+        <div class="column-header" :style="{ borderColor: col.color }">
+          <el-skeleton :rows="0" animated>
+            <template #template>
+              <el-skeleton-item variant="text" style="width: 60px" />
+            </template>
+          </el-skeleton>
+        </div>
+        <div v-for="i in 3" :key="i" style="padding: 12px">
+          <el-skeleton :rows="3" animated />
+        </div>
+      </div>
+    </div>
+
     <!-- Empty state -->
-    <div v-if="!loading && !initialLoading && deliveries.length === 0" class="empty-board">
+    <div v-else-if="!loading && deliveries.length === 0" class="empty-board">
       <el-empty :description="hasActiveFilters ? '没有匹配的投递记录，试试调整筛选条件' : '还没有投递记录'">
         <template v-if="!hasActiveFilters" #default>
           <p class="empty-board-hint">点击右上角「新增投递」开始记录你的求职进展</p>
@@ -845,7 +837,6 @@ onMounted(() => {
 
     <!-- Import Dialog -->
     <BatchImportDialog v-model="importDialogVisible" @imported="handleImported" />
-    </template>
   </div>
 </template>
 

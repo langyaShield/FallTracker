@@ -41,7 +41,6 @@ const calendarEvents = computed(() => {
 const currentDate = ref(new Date())
 const viewMode = ref<'month' | 'week'>('month')
 const loading = ref(true)  // 初始为 true，防止空状态闪现
-const dataReady = ref(false)  // 首次数据加载完成后才渲染内容
 const dialogVisible = ref(false)
 const dialogMode = ref<'create' | 'edit'>('create')
 const editingEvent = ref<Partial<CalendarEvent> & { id?: number; scheduled_at?: string; duration_minutes?: number; delivery_id?: number; event_type?: string; round_number?: number; location?: string; meeting_link?: string; interviewer?: string; notes?: string }>({})
@@ -73,7 +72,6 @@ const weekEvents = computed(() => {
 })
 
 const fetchEvents = async () => {
-  loading.value = true
   try {
     const res = await api.get('/events')
     interviewEvents.value = (res.data || []).map((evt: any) => ({
@@ -91,8 +89,6 @@ const fetchEvents = async () => {
     }))
   } catch (e: unknown) {
     ElMessage.error(extractErrorMessage(e, '获取事件失败'))
-  } finally {
-    loading.value = false
   }
 }
 
@@ -294,26 +290,15 @@ const goToDelivery = (deliveryId: number) => {
 }
 
 onMounted(() => {
-  interviewEvents.value = []
-  deadlineEvents.value = []
-  const startTime = Date.now()
+  loading.value = true
   Promise.all([fetchEvents(), fetchDeliveries()]).finally(() => {
-    // 确保加载状态至少显示 300ms，避免闪现
-    const elapsed = Date.now() - startTime
-    const delay = Math.max(0, 300 - elapsed)
-    setTimeout(() => {
-      dataReady.value = true
-    }, delay)
+    loading.value = false
   })
 })
 </script>
 
 <template>
   <div class="calendar-page">
-    <!-- 首次加载中，不渲染任何内容避免闪现 -->
-    <div v-if="!dataReady" v-loading="true" style="min-height: 300px" />
-
-    <div v-if="dataReady">
     <PageHeader title="日历视图">
       <el-button-group>
         <el-button :icon="ArrowLeft" aria-label="上一月" @click="prevMonth" />
@@ -451,7 +436,6 @@ onMounted(() => {
         <el-button type="primary" @click="saveEvent">保存</el-button>
       </template>
     </el-dialog>
-    </div>
   </div>
 </template>
 
