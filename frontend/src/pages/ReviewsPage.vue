@@ -133,7 +133,7 @@ onMounted(() => {
           <pre class="review-content">{{ review.raw_notes }}</pre>
         </div>
       </el-card>
-      <el-empty v-if="displayedReviews.length === 0" description="还没有面试复盘记录">
+      <el-empty v-if="!loading && displayedReviews.length === 0" description="还没有面试复盘记录">
         <el-button type="primary" :icon="Plus" @click="openAdd">新建复盘</el-button>
       </el-empty>
       <el-pagination

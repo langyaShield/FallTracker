@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Link, Edit, Delete, Search, FolderOpened } from '@element-plus/icons-vue'
 import api from '@/lib/api'
+import PageHeader from '@/components/PageHeader.vue'
 import { useUndoDelete } from '@/composables/useUndoDelete'
 import { extractErrorMessage } from '@/lib/error'
 
@@ -177,22 +178,19 @@ onMounted(() => {
 
 <template>
   <div class="bookmarks-page" v-loading="loading">
-    <div class="page-header">
-      <h2>常用网站</h2>
-      <div class="header-actions">
-        <el-input
-          v-model="searchQuery"
-          placeholder="搜索书签..."
-          :prefix-icon="Search"
-          clearable
-          class="bookmark-search"
-        />
-        <el-select v-model="selectedCategory" placeholder="全部分类" clearable class="bookmark-category-select">
-          <el-option v-for="cat in categories" :key="cat" :label="cat" :value="cat" />
-        </el-select>
-        <el-button type="primary" :icon="Plus" @click="openAddDialog">添加书签</el-button>
-      </div>
-    </div>
+    <PageHeader title="常用网站">
+      <el-input
+        v-model="searchQuery"
+        placeholder="搜索书签..."
+        :prefix-icon="Search"
+        clearable
+        class="bookmark-search"
+      />
+      <el-select v-model="selectedCategory" placeholder="全部分类" clearable class="bookmark-category-select">
+        <el-option v-for="cat in categories" :key="cat" :label="cat" :value="cat" />
+      </el-select>
+      <el-button type="primary" :icon="Plus" @click="openAddDialog">添加书签</el-button>
+    </PageHeader>
 
     <div v-if="filteredBookmarks.length === 0 && !loading" class="empty-state">
       <el-empty :description="bookmarks.length === 0 ? '还没有添加任何书签' : '没有匹配的书签'">

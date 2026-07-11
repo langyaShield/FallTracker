@@ -639,7 +639,7 @@ onUnmounted(() => {
 
     <!-- 上传对话框 -->
     <el-dialog v-model="uploadDialog" title="上传简历" width="500px">
-      <el-form label-width="80px">
+      <el-form label-width="80px" @keyup.enter="handleUpload">
         <el-form-item label="简历名称">
           <el-input v-model="resumeName" placeholder="如：后端开发-字节跳动" />
         </el-form-item>

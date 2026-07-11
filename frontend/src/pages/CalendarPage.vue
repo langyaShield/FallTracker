@@ -5,7 +5,7 @@ import { ElMessage } from 'element-plus'
 import { ArrowLeft, ArrowRight, Plus, Calendar } from '@element-plus/icons-vue'
 import api from '@/lib/api'
 import { EVENT_TYPE_LABEL_MAP, EVENT_TYPE_COLOR_MAP } from '@/lib/constants'
-import { formatDateTime, formatDate } from '@/lib/format'
+import { formatDateTime } from '@/lib/format'
 import { extractErrorMessage } from '@/lib/error'
 import PageHeader from '@/components/PageHeader.vue'
 
@@ -61,11 +61,12 @@ const weekRange = computed(() => {
 
 const weekEvents = computed(() => {
   const { start, end } = weekRange.value
-  end.setHours(23, 59, 59, 999)
+  const startTs = new Date(start.getFullYear(), start.getMonth(), start.getDate(), 0, 0, 0).getTime()
+  const endTs = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23, 59, 59, 999).getTime()
   return calendarEvents.value
     .filter((e) => {
-      const es = new Date(e.start)
-      return es >= start && es <= end
+      const es = new Date(e.start).getTime()
+      return es >= startTs && es <= endTs
     })
     .sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime())
 })
@@ -156,16 +157,26 @@ const calendarDays = computed(() => {
   return result
 })
 
-const getEventsForDay = (day: number | null) => {
-  if (day === null) return []
+// 预计算每天的事件，避免模板中 O(n*m) 重复过滤
+const eventsByDay = computed(() => {
+  const map: Record<number, CalendarEvent[]> = {}
   const year = currentDate.value.getFullYear()
   const month = currentDate.value.getMonth()
-  const start = new Date(year, month, day, 0, 0, 0)
-  const end = new Date(year, month, day, 23, 59, 59)
-  return calendarEvents.value.filter((e) => {
-    const es = new Date(e.start)
-    return es >= start && es <= end
-  })
+  for (const evt of calendarEvents.value) {
+    const d = new Date(evt.start)
+    // 仅当事件属于当前展示的月份时才加入
+    if (d.getFullYear() === year && d.getMonth() === month) {
+      const day = d.getDate()
+      if (!map[day]) map[day] = []
+      map[day].push(evt)
+    }
+  }
+  return map
+})
+
+const getEventsForDay = (day: number | null) => {
+  if (day === null) return []
+  return eventsByDay.value[day] || []
 }
 
 const prevMonth = () => {
@@ -238,6 +249,20 @@ const exportIcs = async () => {
 }
 
 const saveEvent = async () => {
+  // 表单校验
+  if (dialogMode.value === 'create' && !editingEvent.value.delivery_id) {
+    ElMessage.warning('请选择投递')
+    return
+  }
+  if (!editingEvent.value.scheduled_at) {
+    ElMessage.warning('请选择时间')
+    return
+  }
+  if (!editingEvent.value.event_type) {
+    ElMessage.warning('请选择事件类型')
+    return
+  }
+
   try {
     const payload = {
       event_type: editingEvent.value.event_type || 'interview',
@@ -328,14 +353,14 @@ onMounted(() => {
       <el-button type="primary" @click="openAdd">新建第一个事件</el-button>
     </el-empty>
 
-    <div v-else-if="viewMode === 'month'" class="calendar-grid">
+    <div v-else-if="viewMode === 'month'" class="calendar-grid" v-loading="loading">
       <div class="weekday-header" v-for="day in ['日', '一', '二', '三', '四', '五', '六']" :key="day">{{ day }}</div>
       <div
         v-for="(day, idx) in calendarDays"
         :key="idx"
         class="calendar-day"
         :class="{ 'other-month': !day, 'is-today': day === new Date().getDate() && isCurrentMonth }"
-        @click="day ? openAdd(formatDate(new Date(currentDate.getFullYear(), currentDate.getMonth(), day).toISOString())) : null"
+        @click="day ? openAdd(`${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00`) : null"
       >
         <div v-if="day" class="day-number">{{ day }}</div>
         <div class="day-events">
@@ -371,7 +396,7 @@ onMounted(() => {
     </div>
 
     <el-dialog v-model="dialogVisible" :title="dialogMode === 'edit' ? '编辑事件' : '新建事件'" width="500px">
-      <el-form label-width="80px">
+      <el-form label-width="80px" @keyup.enter="saveEvent">
         <el-form-item label="投递">
           <el-select v-model="editingEvent.delivery_id" placeholder="选择投递" :disabled="dialogMode === 'edit'" style="width: 100%">
             <el-option v-for="d in deliveries" :key="d.id" :label="`${d.company} - ${d.position}`" :value="d.id" />

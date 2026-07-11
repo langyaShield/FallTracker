@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onActivated, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import api from '@/lib/api'
@@ -189,6 +189,8 @@ const staleTagType = (days: number) => {
 }
 
 onMounted(fetchAll)
+// 每次进入页面时刷新数据
+onActivated(fetchAll)
 </script>
 
 <template>

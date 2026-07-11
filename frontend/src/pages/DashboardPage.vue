@@ -623,7 +623,12 @@ onMounted(() => {
             }"
             :style="{ borderLeftColor: urgencyBorderColor(getDeadlineUrgency(item.deadline)) }"
             draggable="true"
+            tabindex="0"
+            role="button"
+            :aria-label="`${item.company} - ${item.position}`"
             @click.stop="onCardClick(item)"
+            @keydown.enter.prevent="onCardClick(item)"
+            @keydown.space.prevent="onCardClick(item)"
             @dragstart="onDragStart($event, item)"
             @dragend="onDragEnd"
           >
@@ -787,12 +792,12 @@ onMounted(() => {
 
     <!-- Add/Edit Dialog -->
     <el-dialog v-model="dialogVisible" :title="editing.id ? '编辑投递' : '新增投递'" width="500px">
-      <el-form label-width="80px">
-        <el-form-item label="公司">
-          <el-input v-model="editing.company" placeholder="公司名称" />
+      <el-form label-width="80px" @keyup.enter="saveDelivery">
+        <el-form-item label="公司" required>
+          <el-input v-model="editing.company" placeholder="公司名称（必填）" />
         </el-form-item>
-        <el-form-item label="岗位">
-          <el-input v-model="editing.position" placeholder="岗位名称" />
+        <el-form-item label="岗位" required>
+          <el-input v-model="editing.position" placeholder="岗位名称（必填）" />
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="editing.status" placeholder="选择状态" style="width: 100%">
@@ -1024,12 +1029,18 @@ onMounted(() => {
   font-weight: 600;
   font-size: 15px;
   color: #1e3a5f;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .position {
   font-size: 13px;
   color: #64748b;
   margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .card-time {

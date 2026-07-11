@@ -304,6 +304,7 @@ onMounted(() => {
           </template>
         </el-table-column>
       </el-table>
+      <el-empty v-if="!loading && filteredUsers.length === 0" description="没有匹配的用户" />
     </el-card>
 
     <!-- 邀请码管理 -->
@@ -396,6 +397,7 @@ onMounted(() => {
           </template>
         </el-table-column>
       </el-table>
+      <el-empty v-if="!inviteLoading && inviteCodes.length === 0" description="暂无邀请码" />
     </el-card>
   </div>
 </template>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, VideoPlay, VideoPause, Edit, Delete, CaretRight, Loading } from '@element-plus/icons-vue'
 import api from '@/lib/api'
 import { formatLocaleDateTime } from '@/lib/format'
@@ -161,6 +161,17 @@ async function saveNewConfig() {
     ElMessage.warning('请填写名称和目标网址')
     return
   }
+  // URL 格式校验
+  try {
+    const parsed = new URL(configForm.value.url)
+    if (!['http:', 'https:'].includes(parsed.protocol)) {
+      ElMessage.warning('网址必须以 http:// 或 https:// 开头')
+      return
+    }
+  } catch {
+    ElMessage.warning('请输入有效的网址（以 http:// 或 https:// 开头）')
+    return
+  }
   configSaving.value = true
   try {
     await api.post('/radar/configs', configForm.value)
@@ -222,8 +233,17 @@ async function saveEdit(runAfter = false) {
 
 // ─── 操作 ───
 
-function deleteConfig(config: CrawlerConfig) {
-  requestDeleteConfig(config)
+async function deleteConfig(config: CrawlerConfig) {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除监控项 "${config.name}" 吗？删除后可在 2 秒内撤销。`,
+      '确认删除',
+      { confirmButtonText: '删除', cancelButtonText: '取消', type: 'warning' }
+    )
+    requestDeleteConfig(config)
+  } catch {
+    // 用户取消
+  }
 }
 
 async function runNow(config: CrawlerConfig) {

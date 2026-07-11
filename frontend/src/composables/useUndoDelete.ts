@@ -1,9 +1,10 @@
-import { shallowRef, computed, h } from 'vue'
-import { ElNotification, ElButton } from 'element-plus'
+import { shallowRef, computed, h, onUnmounted } from 'vue'
+import { ElNotification, ElButton, ElMessage } from 'element-plus'
 
 interface UndoDeleteOptions<T> {
   deleteFn: (item: T) => Promise<void>
   onSuccess?: () => void
+  onError?: (item: T, error: unknown) => void
   duration?: number
   getId: (item: T) => string | number
   getName?: (item: T) => string
@@ -77,10 +78,25 @@ export function useUndoDelete<T>(options: UndoDeleteOptions<T>) {
     try {
       await options.deleteFn(pending.item)
       options.onSuccess?.()
-    } catch (e: any) {
-      throw e
+    } catch (e: unknown) {
+      const name = options.getName?.(pending.item) ?? String(id)
+      ElMessage.error(`删除 "${name}" 失败`)
+      if (options.onError) {
+        options.onError(pending.item, e)
+      }
     }
   }
+
+  // 组件卸载时清理所有待处理的定时器，防止内存泄漏和意外删除
+  const cleanup = () => {
+    for (const [id, pending] of pendingItems.value) {
+      window.clearTimeout(pending.timer)
+      pending.closeNotification()
+    }
+    pendingItems.value.clear()
+  }
+
+  onUnmounted(cleanup)
 
   const pendingIds = computed(() => new Set(pendingItems.value.keys()))
 
@@ -90,5 +106,6 @@ export function useUndoDelete<T>(options: UndoDeleteOptions<T>) {
     requestDelete,
     cancelDelete,
     confirmDelete,
+    cleanup,
   }
 }
