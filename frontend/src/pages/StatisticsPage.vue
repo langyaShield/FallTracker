@@ -55,16 +55,14 @@ watch(timelineMonths, () => {
 async function fetchAll() {
   loading.value = true
   try {
-    const [overviewRes, funnelRes, timelineRes, companyRes, interviewRes] = await Promise.all([
+    const [overviewRes, funnelRes, companyRes, interviewRes] = await Promise.all([
       api.get('/statistics/overview'),
       api.get('/statistics/funnel'),
-      api.get('/statistics/timeline?months=6'),
       api.get('/statistics/company-progress?limit=20'),
       api.get('/statistics/interview-stats'),
     ])
     overview.value = overviewRes.data
     funnel.value = funnelRes.data
-    timeline.value = timelineRes.data
     companyProgress.value = companyRes.data || []
     interviewStats.value = interviewRes.data
   } catch (e: any) {
@@ -188,7 +186,10 @@ const staleTagType = (days: number) => {
   return 'info'
 }
 
-onMounted(fetchAll)
+onMounted(() => {
+  fetchAll()
+  fetchTimeline()
+})
 // 每次进入页面时刷新数据
 onActivated(fetchAll)
 </script>

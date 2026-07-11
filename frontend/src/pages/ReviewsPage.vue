@@ -150,7 +150,7 @@ onMounted(() => {
     <el-dialog v-model="dialogVisible" :title="editing.id ? '编辑复盘' : '新建复盘'" width="600px">
       <el-form label-width="80px">
         <el-form-item label="投递">
-          <el-select v-model="editing.delivery_id" placeholder="选择投递" style="width: 100%">
+          <el-select v-model="editing.delivery_id" placeholder="选择投递" style="width: 100%" :disabled="!!editing.id">
             <el-option v-for="d in deliveries" :key="d.id" :label="`${d.company} - ${d.position}`" :value="d.id" />
           </el-select>
         </el-form-item>

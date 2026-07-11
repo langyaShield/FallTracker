@@ -3,6 +3,7 @@ import { ref, onMounted, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Search, Lock, Unlock, Plus, CopyDocument, Delete } from '@element-plus/icons-vue'
 import api from '@/lib/api'
+import { formatDateLocale } from '@/lib/format'
 import { extractErrorMessage } from '@/lib/error'
 import PageHeader from '@/components/PageHeader.vue'
 
@@ -73,15 +74,6 @@ const enableUser = async (user: AdminUser) => {
     fetchUsers()
   } catch (e: any) {
     ElMessage.error(extractErrorMessage(e, '启用失败'))
-  }
-}
-
-const formatDate = (dateStr: string | null) => {
-  if (!dateStr) return '-'
-  try {
-    return new Date(dateStr).toLocaleString('zh-CN')
-  } catch {
-    return dateStr
   }
 }
 
@@ -275,7 +267,7 @@ onMounted(() => {
         </el-table-column>
         <el-table-column label="注册时间" width="180">
           <template #default="{ row }">
-            {{ formatDate(row.created_at) }}
+            {{ formatDateLocale(row.created_at) }}
           </template>
         </el-table-column>
         <el-table-column label="操作" width="120" fixed="right">
@@ -375,12 +367,12 @@ onMounted(() => {
         </el-table-column>
         <el-table-column label="过期时间" width="180">
           <template #default="{ row }">
-            {{ row.expires_at ? formatDate(row.expires_at) : '永不过期' }}
+            {{ row.expires_at ? formatDateLocale(row.expires_at) : '永不过期' }}
           </template>
         </el-table-column>
         <el-table-column label="创建时间" width="180">
           <template #default="{ row }">
-            {{ formatDate(row.created_at) }}
+            {{ formatDateLocale(row.created_at) }}
           </template>
         </el-table-column>
         <el-table-column label="操作" width="80" fixed="right">

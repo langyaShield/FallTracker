@@ -163,7 +163,7 @@ onUnmounted(() => {
     </div>
 
     <div class="quick-actions">
-      <el-button type="primary" size="large" :icon="Plus" @click="router.push('/dashboard')">新增投递</el-button>
+      <el-button type="primary" size="large" :icon="Plus" @click="router.push({ path: '/dashboard', query: { openAdd: 'true' } })">新增投递</el-button>
       <el-button size="large" :icon="Clock" @click="router.push('/calendar')">新增事件</el-button>
       <el-button size="large" :icon="Upload" @click="router.push('/resumes')">上传简历</el-button>
       <el-button size="large" :icon="TrendCharts" @click="router.push('/dashboard')">投递大盘</el-button>

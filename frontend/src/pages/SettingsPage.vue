@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Download, Upload, Refresh, Delete, Check } from '@element-plus/icons-vue'
 import api from '@/lib/api'
+import { formatFileSize, formatDateLocale } from '@/lib/format'
 import { formatLocaleDateTime } from '@/lib/format'
 import { extractErrorMessage } from '@/lib/error'
 import PageHeader from '@/components/PageHeader.vue'
@@ -282,20 +283,6 @@ const restoreFromCos = async () => {
     ElMessage.error(extractErrorMessage(e, '从云端恢复失败'))
   } finally {
     cosRestoring.value = false
-  }
-}
-
-const formatSize = (bytes: number) => {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-}
-
-const formatDate = (dateStr: string) => {
-  try {
-    return new Date(dateStr).toLocaleString('zh-CN')
-  } catch {
-    return dateStr
   }
 }
 
@@ -621,10 +608,10 @@ onMounted(() => {
               </template>
             </el-table-column>
             <el-table-column label="大小" width="100">
-              <template #default="{ row }">{{ formatSize(row.size) }}</template>
+              <template #default="{ row }">{{ formatFileSize(row.size) }}</template>
             </el-table-column>
             <el-table-column label="修改时间" width="180">
-              <template #default="{ row }">{{ formatDate(row.last_modified) }}</template>
+              <template #default="{ row }">{{ formatDateLocale(row.last_modified) }}</template>
             </el-table-column>
             <el-table-column label="操作" width="140" fixed="right">
               <template #default="{ row }">

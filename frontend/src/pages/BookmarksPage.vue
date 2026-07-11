@@ -277,29 +277,6 @@ onMounted(() => {
   /* max-width removed — title should align left like other pages */
 }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-
-.page-header h2 {
-  font-size: 24px;
-  font-weight: 700;
-  color: #1e3a5f;
-  margin: 0;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
 .bookmark-search {
   width: 200px;
 }

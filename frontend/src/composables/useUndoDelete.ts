@@ -19,6 +19,7 @@ interface PendingItem<T> {
 export function useUndoDelete<T>(options: UndoDeleteOptions<T>) {
   const pendingItems = shallowRef<Map<string | number, PendingItem<T>>>(new Map())
   const duration = options.duration ?? 2000
+  let isMounted = true
 
   const requestDelete = (item: T) => {
     const id = options.getId(item)
@@ -70,6 +71,7 @@ export function useUndoDelete<T>(options: UndoDeleteOptions<T>) {
   }
 
   const confirmDelete = async (id: string | number) => {
+    if (!isMounted) return
     const pending = pendingItems.value.get(id)
     if (!pending) return
     window.clearTimeout(pending.timer)
@@ -96,7 +98,10 @@ export function useUndoDelete<T>(options: UndoDeleteOptions<T>) {
     pendingItems.value.clear()
   }
 
-  onUnmounted(cleanup)
+  onUnmounted(() => {
+    isMounted = false
+    cleanup()
+  })
 
   const pendingIds = computed(() => new Set(pendingItems.value.keys()))
 

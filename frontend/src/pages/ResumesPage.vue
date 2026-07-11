@@ -8,7 +8,7 @@ import {
   RefreshRight, Check, Close, Sort
 } from '@element-plus/icons-vue'
 import api from '@/lib/api'
-import { formatDate } from '@/lib/format'
+import { formatDate, formatFileSize } from '@/lib/format'
 import { extractErrorMessage } from '@/lib/error'
 import PageHeader from '@/components/PageHeader.vue'
 
@@ -42,6 +42,7 @@ const searchQuery = ref('')
 const filterOcrStatus = ref('')
 const sortBy = ref('created_at')
 const sortOrder = ref('desc')
+const searchLoading = ref(false)
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 
 // 上传对话框
@@ -178,14 +179,23 @@ const handleSearch = () => {
       fetchResumes()
       return
     }
+    searchLoading.value = true
     try {
-      const res = await api.get('/resumes/search', {
-        params: { q: searchQuery.value }
-      })
+      const params: Record<string, any> = {
+        q: searchQuery.value,
+        sort_by: sortBy.value,
+        sort_order: sortOrder.value,
+      }
+      if (filterOcrStatus.value) {
+        params.ocr_status = filterOcrStatus.value
+      }
+      const res = await api.get('/resumes/search', { params })
       resumes.value = res.data?.items || []
       total.value = res.data?.total || 0
     } catch {
       ElMessage.error('搜索失败')
+    } finally {
+      searchLoading.value = false
     }
   }, 300)
 }
@@ -459,13 +469,6 @@ const ocrStatusType = (status: string) => {
   }
 }
 
-const formatFileSize = (bytes: number) => {
-  if (!bytes) return '未知'
-  if (bytes < 1024) return bytes + ' B'
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
-  return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
-}
-
 const fileTypeIcon = (type: string) => {
   if (!type) return '📄'
   if (type === '.pdf') return '📕'
@@ -527,16 +530,6 @@ onUnmounted(() => {
         :type="selectMode ? 'warning' : 'default'"
         @click="toggleSelectMode"
       >{{ selectMode ? '取消选择' : '批量操作' }}</el-button>
-      <el-button
-        v-if="selectMode"
-        type="danger"
-        :disabled="selectedIds.length === 0"
-        @click="batchDelete"
-      >删除选中 ({{ selectedIds.length }})</el-button>
-      <el-button
-        v-if="selectMode"
-        @click="selectAll"
-      >{{ selectedIds.length === displayedResumes.length ? '取消全选' : '全选' }}</el-button>
       <el-button type="primary" :icon="Plus" @click="uploadDialog = true">上传简历</el-button>
     </PageHeader>
 
@@ -544,7 +537,7 @@ onUnmounted(() => {
       <span>共 {{ total }} 份简历</span>
     </div>
 
-    <div v-loading="loading" class="resume-list">
+    <div v-loading="loading || searchLoading" class="resume-list">
       <el-card
         v-for="resume in displayedResumes"
         :key="resume.id"
@@ -720,6 +713,15 @@ onUnmounted(() => {
         <pre v-else class="ocr-text">{{ ocrText }}</pre>
       </div>
     </el-dialog>
+
+    <!-- 批量操作固定底栏 -->
+    <div v-if="selectMode" class="batch-bar">
+      <span class="batch-info">已选 {{ selectedIds.length }} 项</span>
+      <div class="batch-actions">
+        <el-button @click="selectAll">{{ selectedIds.length === displayedResumes.length ? '取消全选' : '全选' }}</el-button>
+        <el-button type="danger" :disabled="selectedIds.length === 0" @click="batchDelete">删除选中</el-button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -904,5 +906,38 @@ onUnmounted(() => {
   font-size: 12px;
   color: #909399;
   margin-top: 4px;
+}
+
+/* 批量操作固定底栏 */
+.batch-bar {
+  position: fixed;
+  bottom: 0;
+  left: 220px;
+  right: 0;
+  background: #fff;
+  border-top: 1px solid #e2e8f0;
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 100;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.batch-info {
+  font-size: 14px;
+  color: #64748b;
+}
+
+.batch-actions {
+  display: flex;
+  gap: 8px;
+}
+
+@media (max-width: 768px) {
+  .batch-bar {
+    left: 0;
+    padding: 10px 12px;
+  }
 }
 </style>

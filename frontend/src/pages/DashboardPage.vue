@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search, Download, Upload, Delete, Grid, List, ArrowDown } from '@element-plus/icons-vue'
 import api from '@/lib/api'
@@ -12,6 +12,7 @@ import PageHeader from '@/components/PageHeader.vue'
 import BatchImportDialog from '@/components/BatchImportDialog.vue'
 
 const router = useRouter()
+const route = useRoute()
 
 interface Delivery {
   id: number
@@ -83,7 +84,7 @@ const clearFilters = () => {
 }
 
 const hasActiveFilters = computed(() => {
-  return debouncedSearch.value !== ''
+  return debouncedSearch.value !== '' || sortOption.value !== 'created_at_desc'
 })
 
 // Build query params from current filter state and fetch from backend
@@ -431,8 +432,7 @@ const fetchResumes = async () => {
 }
 
 const openAdd = (defaultStatus?: string) => {
-  const status = typeof defaultStatus === 'string' ? defaultStatus : 'pending'
-  editing.value = { status: status || 'pending', tags: [], deadline: null }
+  editing.value = { status: defaultStatus || 'pending', tags: [], deadline: null }
   dialogVisible.value = true
 }
 
@@ -479,6 +479,11 @@ const updateStatus = async (item: Delivery, newStatus: string) => {
 onMounted(() => {
   fetchDeliveries()
   fetchResumes()
+  // 从首页跳转时自动打开新增投递弹窗
+  if (route.query.openAdd === 'true') {
+    openAdd()
+    router.replace({ query: {} })
+  }
 })
 </script>
 
@@ -711,7 +716,7 @@ onMounted(() => {
             {{ formatDateTime(row.created_at) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="120" fixed="right">
+        <el-table-column label="操作" width="120" fixed="right" @click.stop>
           <template #default="{ row }">
             <el-dropdown
               size="small"

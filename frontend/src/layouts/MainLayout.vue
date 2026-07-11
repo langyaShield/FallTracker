@@ -13,7 +13,6 @@ import {
   User,
   SwitchButton,
   Key,
-  Fold,
   Postcard,
   CopyDocument,
   Star,
@@ -97,7 +96,7 @@ const { shortcuts, showHints } = useKeyboardShortcuts()
   <div v-if="isMobile" class="mobile-header">
     <div class="mobile-header-left">
       <button class="hamburger-btn" @click="openDrawer" aria-label="打开菜单">
-        <Fold />
+        <span class="hamburger-lines"><span /><span /><span /></span>
       </button>
       <span class="mobile-title">{{ pageTitle }}</span>
     </div>
@@ -267,9 +266,21 @@ const { shortcuts, showHints } = useKeyboardShortcuts()
   background: rgba(255, 255, 255, 0.15);
 }
 
-.hamburger-btn svg {
+.hamburger-lines {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
   width: 22px;
-  height: 22px;
+  height: 18px;
+}
+
+.hamburger-lines span {
+  display: block;
+  width: 100%;
+  height: 2px;
+  background: #fff;
+  border-radius: 1px;
 }
 
 .mobile-title {

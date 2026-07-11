@@ -379,7 +379,7 @@ onMounted(() => {
     </div>
 
     <!-- 周视图 -->
-    <div v-else class="week-view">
+    <div v-else class="week-view" v-loading="loading">
       <div class="week-header">
         {{ weekRange.start.getMonth() + 1 }}月{{ weekRange.start.getDate() }}日 -
         {{ weekRange.end.getMonth() + 1 }}月{{ weekRange.end.getDate() }}日

@@ -42,3 +42,21 @@ export function getDeadlineUrgency(deadline?: string | null): 'expired' | 'urgen
   if (diff <= 48 * 60 * 60 * 1000) return 'warning'
   return 'normal'
 }
+
+/** 格式化文件大小为可读字符串 */
+export function formatFileSize(bytes: number | null | undefined): string {
+  if (bytes == null || bytes <= 0) return '未知'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+/** 格式化日期字符串为中文格式，如 "2026/7/11 14:30:00" */
+export function formatDateLocale(dateStr: string | null | undefined): string {
+  if (!dateStr) return '-'
+  try {
+    return new Date(dateStr).toLocaleString('zh-CN')
+  } catch {
+    return '-'
+  }
+}
