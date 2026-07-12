@@ -68,6 +68,8 @@ watch(searchQuery, (val) => {
 })
 
 const sortOption = ref('created_at_desc')
+const tagFilter = ref('')
+const tagSuggestions = ref<{ value: string; label: string }[]>([])
 
 const sortOptions = [
   { label: '创建时间 ↓', value: 'created_at_desc' },
@@ -81,10 +83,11 @@ const clearFilters = () => {
   searchQuery.value = ''
   debouncedSearch.value = ''
   sortOption.value = 'created_at_desc'
+  tagFilter.value = ''
 }
 
 const hasActiveFilters = computed(() => {
-  return debouncedSearch.value !== '' || sortOption.value !== 'created_at_desc'
+  return debouncedSearch.value !== '' || sortOption.value !== 'created_at_desc' || tagFilter.value !== ''
 })
 
 // Build query params from current filter state and fetch from backend
@@ -95,6 +98,11 @@ const buildQueryParams = () => {
   const q = debouncedSearch.value.trim()
   if (q) {
     params.search = q
+  }
+
+  // tag filter
+  if (tagFilter.value) {
+    params.tag = tagFilter.value
   }
 
   // sort
@@ -417,8 +425,8 @@ const fetchDeliveries = async () => {
   }
 }
 
-// Re-fetch when search/sort filters change
-watch([debouncedSearch, sortOption], () => {
+// Re-fetch when search/sort/tag filters change
+watch([debouncedSearch, sortOption, tagFilter], () => {
   fetchDeliveries()
 })
 
@@ -428,6 +436,18 @@ const fetchResumes = async () => {
     resumes.value = res.data?.items || []
   } catch (e) {
     console.warn('简历列表加载失败', e)
+  }
+}
+
+const fetchTagSuggestions = async () => {
+  try {
+    const res = await api.get('/deliveries/tags')
+    tagSuggestions.value = (res.data || []).map((t: { tag: string; count: number }) => ({
+      value: t.tag,
+      label: `${t.tag} (${t.count})`,
+    }))
+  } catch (e) {
+    console.warn('标签建议加载失败', e)
   }
 }
 
@@ -479,6 +499,7 @@ const updateStatus = async (item: Delivery, newStatus: string) => {
 onMounted(() => {
   fetchDeliveries()
   fetchResumes()
+  fetchTagSuggestions()
   // 从首页跳转时自动打开新增投递弹窗
   if (route.query.openAdd === 'true') {
     openAdd()
@@ -505,6 +526,19 @@ onMounted(() => {
           clearable
           class="search-input"
         />
+        <el-select
+          v-model="tagFilter"
+          placeholder="按标签筛选"
+          clearable
+          class="tag-filter-select"
+        >
+          <el-option
+            v-for="t in tagSuggestions"
+            :key="t.value"
+            :label="t.label"
+            :value="t.value"
+          />
+        </el-select>
         <el-select v-model="sortOption" placeholder="排序" class="sort-select">
           <el-option
             v-for="opt in sortOptions"
@@ -799,7 +833,7 @@ onMounted(() => {
         <el-form-item label="标签">
           <el-select-v2
             v-model="editing.tags"
-            :options="[]"
+            :options="tagSuggestions"
             placeholder="输入标签按回车"
             allow-create
             multiple
@@ -865,6 +899,11 @@ onMounted(() => {
 .sort-select {
   min-width: 100px;
   max-width: 140px;
+}
+
+.tag-filter-select {
+  min-width: 120px;
+  max-width: 180px;
 }
 
 .filter-count {

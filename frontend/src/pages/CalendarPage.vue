@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { ArrowLeft, ArrowRight, Plus, Calendar } from '@element-plus/icons-vue'
@@ -188,14 +188,18 @@ const goToToday = () => {
   currentDate.value = new Date()
 }
 
-const openAdd = (initialDate?: string) => {
+const openAdd = async (initialDate?: string) => {
   dialogMode.value = 'create'
+  // 先打开对话框，让 el-date-picker 挂载完成
+  dialogVisible.value = true
+  // 使用 nextTick 确保 DOM 更新后，再设置初始日期值
+  // 避免 el-date-picker 在挂载时因解析问题覆盖初始值
+  await nextTick()
   editingEvent.value = {
     scheduled_at: initialDate || '',
     duration_minutes: 60,
     event_type: 'interview',
   }
-  dialogVisible.value = true
 }
 
 const openEdit = async (evt: CalendarEvent) => {
@@ -413,7 +417,15 @@ onMounted(() => {
           <el-input-number v-model="editingEvent.round_number" :min="1" style="width: 100%" />
         </el-form-item>
         <el-form-item label="时间">
-          <el-date-picker v-model="editingEvent.scheduled_at" type="datetime" placeholder="选择日期时间" style="width: 100%" value-format="YYYY-MM-DDTHH:mm" />
+          <el-date-picker
+            v-model="editingEvent.scheduled_at"
+            type="datetime"
+            placeholder="选择日期时间"
+            style="width: 100%"
+            format="YYYY-MM-DD HH:mm"
+            value-format="YYYY-MM-DDTHH:mm"
+            :default-time="new Date(2000, 0, 1, 9, 0, 0)"
+          />
         </el-form-item>
         <el-form-item label="时长">
           <el-input-number v-model="editingEvent.duration_minutes" :min="15" :step="15" style="width: 100%" />
