@@ -513,7 +513,7 @@ onMounted(() => {
     <PageHeader title="投递大盘">
       <el-button :icon="Upload" @click="importDialogVisible = true">导入</el-button>
       <el-button :icon="Download" @click="handleExport">导出</el-button>
-      <el-button type="primary" :icon="Plus" @click="openAdd">新增投递</el-button>
+      <el-button type="primary" :icon="Plus" @click="openAdd()">新增投递</el-button>
     </PageHeader>
 
     <!-- Search & Filter Toolbar -->
