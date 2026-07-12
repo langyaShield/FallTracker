@@ -156,6 +156,40 @@ _add_column_if_not_exists("user_settings", "email_template", "TEXT")
 # 移除已下线的「工作经历」分类历史数据
 _cleanup_work_profile_fields()
 
+
+def _cleanup_orphaned_data():
+    """清理孤儿数据：删除投递被删除后残留的关联记录。
+
+    SQLite 默认不启用外键约束，历史删除投递时事件/日志/笔记等未级联删除，
+    导致新建投递复用 ID 后出现"幽灵事件"。
+    """
+    db_path = settings.DATABASE_URL.replace("sqlite:///", "")
+    if not os.path.isfile(db_path):
+        return
+    conn = sqlite3.connect(db_path)
+    try:
+        cursor = conn.cursor()
+        tables = [
+            ("interview_events", "delivery_id"),
+            ("delivery_logs", "delivery_id"),
+            ("delivery_notes", "delivery_id"),
+            ("reviews", "delivery_id"),
+        ]
+        total = 0
+        for table, col in tables:
+            cursor.execute(f"DELETE FROM {table} WHERE {col} NOT IN (SELECT id FROM deliveries)")
+            total += cursor.rowcount
+        conn.commit()
+        if total:
+            logger.info("Cleaned up %d orphaned records from deleted deliveries", total)
+    except Exception as e:
+        logger.warning("Failed to cleanup orphaned data: %s", e)
+    finally:
+        conn.close()
+
+
+_cleanup_orphaned_data()
+
 # Ensure indexes exist on high-frequency filter columns (idempotent)
 _create_index_if_not_exists("deliveries", "user_id")
 _create_index_if_not_exists("deliveries", "status")

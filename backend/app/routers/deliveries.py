@@ -13,7 +13,7 @@ from sqlalchemy import func, or_, Text
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Delivery, DeliveryLog, DeliveryNote, InterviewEvent, User
+from app.models import Delivery, DeliveryLog, DeliveryNote, InterviewEvent, Review, User
 from app.ratelimit import limiter
 from app.schemas import (
     DeliveryCreate, DeliveryUpdate, DeliveryOut,
@@ -413,6 +413,11 @@ def delete_delivery(delivery_id: int, request: Request, db: Session = Depends(ge
     item = db.query(Delivery).filter(Delivery.id == delivery_id, Delivery.user_id == current_user.id).first()
     if not item:
         raise HTTPException(status_code=404, detail="投递不存在")
+    # 手动删除关联数据（双保险，防止 SQLite 外键级联未生效时产生孤儿数据）
+    db.query(InterviewEvent).filter(InterviewEvent.delivery_id == delivery_id).delete()
+    db.query(DeliveryLog).filter(DeliveryLog.delivery_id == delivery_id).delete()
+    db.query(DeliveryNote).filter(DeliveryNote.delivery_id == delivery_id).delete()
+    db.query(Review).filter(Review.delivery_id == delivery_id).delete()
     db.delete(item)
     db.commit()
     return {"ok": True}
