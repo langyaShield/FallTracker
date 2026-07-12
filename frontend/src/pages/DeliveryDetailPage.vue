@@ -322,17 +322,6 @@ onMounted(() => {
               </el-select>
               <span class="auto-save-hint">切换后自动保存</span>
             </el-form-item>
-            <el-form-item label="标签">
-              <el-select-v2
-                v-model="delivery!.tags"
-                :options="tagOptions"
-                allow-create
-                multiple
-                filterable
-                placeholder="选择或输入新标签"
-                style="width: 100%"
-              />
-            </el-form-item>
             <el-form-item label="链接">
               <el-input v-model="delivery!.link" />
             </el-form-item>
