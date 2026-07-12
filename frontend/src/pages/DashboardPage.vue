@@ -830,17 +830,6 @@ onMounted(() => {
             <el-option v-for="s in STATUS_COLUMNS" :key="s.key" :label="s.label" :value="s.key" />
           </el-select>
         </el-form-item>
-        <el-form-item label="标签">
-          <el-select-v2
-            v-model="editing.tags"
-            :options="tagSuggestions"
-            placeholder="输入标签按回车"
-            allow-create
-            multiple
-            filterable
-            style="width: 100%"
-          />
-        </el-form-item>
         <el-form-item label="JD链接">
           <el-input v-model="editing.link" placeholder="招聘链接" />
         </el-form-item>

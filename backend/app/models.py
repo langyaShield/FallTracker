@@ -169,7 +169,7 @@ class CrawlerResult(Base):
 
 
 class Bookmark(Base):
-    """常用网站书签。"""
+    """常用网站。"""
     __tablename__ = "bookmarks"
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)

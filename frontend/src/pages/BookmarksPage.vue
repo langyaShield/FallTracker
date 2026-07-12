@@ -77,7 +77,7 @@ const fetchBookmarks = async () => {
     const res = await api.get('/bookmarks')
     bookmarks.value = res.data || []
   } catch (e: unknown) {
-    ElMessage.error(extractErrorMessage(e, '加载书签失败'))
+    ElMessage.error(extractErrorMessage(e, '加载网站失败'))
   } finally {
     loading.value = false
   }
@@ -118,10 +118,10 @@ const submitForm = async () => {
   try {
     if (editingBookmark.value) {
       await api.put(`/bookmarks/${editingBookmark.value.id}`, form.value)
-      ElMessage.success('书签已更新')
+      ElMessage.success('网站已更新')
     } else {
       await api.post('/bookmarks', form.value)
-      ElMessage.success('书签已添加')
+      ElMessage.success('网站已添加')
     }
     dialogVisible.value = false
     fetchBookmarks()
@@ -181,7 +181,7 @@ onMounted(() => {
     <PageHeader title="常用网站">
       <el-input
         v-model="searchQuery"
-        placeholder="搜索书签..."
+        placeholder="搜索网站..."
         :prefix-icon="Search"
         clearable
         class="bookmark-search"
@@ -189,12 +189,12 @@ onMounted(() => {
       <el-select v-model="selectedCategory" placeholder="全部分类" clearable class="bookmark-category-select">
         <el-option v-for="cat in categories" :key="cat" :label="cat" :value="cat" />
       </el-select>
-      <el-button type="primary" :icon="Plus" @click="openAddDialog">添加书签</el-button>
+      <el-button type="primary" :icon="Plus" @click="openAddDialog">添加网站</el-button>
     </PageHeader>
 
     <div v-if="filteredBookmarks.length === 0 && !loading" class="empty-state">
-      <el-empty :description="bookmarks.length === 0 ? '还没有添加任何书签' : '没有匹配的书签'">
-        <el-button v-if="bookmarks.length === 0" type="primary" @click="openAddDialog">添加第一个书签</el-button>
+      <el-empty :description="bookmarks.length === 0 ? '还没有添加任何网站' : '没有匹配的网站'">
+        <el-button v-if="bookmarks.length === 0" type="primary" @click="openAddDialog">添加第一个网站</el-button>
         <el-button v-else @click="searchQuery = ''; selectedCategory = ''">清除筛选</el-button>
       </el-empty>
     </div>
@@ -231,8 +231,8 @@ onMounted(() => {
             </div>
           </div>
           <div class="card-actions" @click.stop>
-            <el-button text size="small" :icon="Edit" aria-label="编辑书签" @click="openEditDialog(bookmark)" />
-            <el-button text size="small" type="danger" :icon="Delete" aria-label="删除书签" @click="deleteBookmark(bookmark)" />
+            <el-button text size="small" :icon="Edit" aria-label="编辑网站" @click="openEditDialog(bookmark)" />
+            <el-button text size="small" type="danger" :icon="Delete" aria-label="删除网站" @click="deleteBookmark(bookmark)" />
           </div>
         </div>
       </div>
@@ -241,7 +241,7 @@ onMounted(() => {
     <!-- 添加/编辑对话框 -->
     <el-dialog
       v-model="dialogVisible"
-      :title="editingBookmark ? '编辑书签' : '添加书签'"
+      :title="editingBookmark ? '编辑网站' : '添加网站'"
       width="480px"
       @close="form = { title: '', url: '', category: '', icon: '', sort_order: 0 }"
     >

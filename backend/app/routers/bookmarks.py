@@ -1,4 +1,4 @@
-"""常用网站书签：CRUD 操作，支持分类管理。"""
+"""常用网站：CRUD 操作，支持分类管理。"""
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
@@ -20,7 +20,7 @@ def list_bookmarks(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """获取当前用户所有书签，按 sort_order 和创建时间排序。支持 limit/offset 分页。"""
+    """获取当前用户所有网站，按 sort_order 和创建时间排序。支持 limit/offset 分页。"""
     q = (
         db.query(Bookmark)
         .filter(Bookmark.user_id == current_user.id)
@@ -40,7 +40,7 @@ def create_bookmark(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """创建新书签。"""
+    """创建新网站。"""
     bookmark = Bookmark(
         user_id=current_user.id,
         title=data.title,
@@ -64,14 +64,14 @@ def update_bookmark(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """更新书签。"""
+    """更新网站。"""
     bookmark = (
         db.query(Bookmark)
         .filter(Bookmark.id == bookmark_id, Bookmark.user_id == current_user.id)
         .first()
     )
     if not bookmark:
-        raise HTTPException(status_code=404, detail="书签不存在")
+        raise HTTPException(status_code=404, detail="网站不存在")
     for field_name, value in data.model_dump(exclude_unset=True).items():
         setattr(bookmark, field_name, value)
     db.commit()
@@ -87,14 +87,14 @@ def delete_bookmark(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """删除书签。"""
+    """删除网站。"""
     bookmark = (
         db.query(Bookmark)
         .filter(Bookmark.id == bookmark_id, Bookmark.user_id == current_user.id)
         .first()
     )
     if not bookmark:
-        raise HTTPException(status_code=404, detail="书签不存在")
+        raise HTTPException(status_code=404, detail="网站不存在")
     db.delete(bookmark)
     db.commit()
-    return {"success": True, "message": f"已删除书签 {bookmark.title}"}
+    return {"success": True, "message": f"已删除网站 {bookmark.title}"}
