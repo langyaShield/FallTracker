@@ -919,9 +919,9 @@ async def retrigger_resume_ocr(ctx: Context, resume_id: int) -> dict:
             r.ocr_text = None
             db.commit()
             # Run OCR in background thread so the tool returns immediately
-            from app.routers.resumes import _run_ocr_background
+            from app.modules.resumes.service import trigger_ocr_background
             threading.Thread(
-                target=_run_ocr_background, args=(r.id, r.file_path), daemon=True
+                target=trigger_ocr_background, args=(r.id, r.file_path), daemon=True
             ).start()
             return {"success": True, "message": "已重新触发 OCR"}
         except Exception:
