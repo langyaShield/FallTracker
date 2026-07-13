@@ -12,6 +12,7 @@ from app.schemas import (
 )
 from app.auth import get_current_user
 from app.ratelimit import limiter
+from app.modules.applications.service import ApplicationEventNotFoundError, ApplicationService
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -55,24 +56,21 @@ def list_all_events(
 @router.put("/{event_id}", response_model=InterviewEventOut)
 @limiter.limit("30/minute")
 def update_event(event_id: int, request: Request, data: InterviewEventUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    event = db.query(InterviewEvent).join(Delivery).filter(InterviewEvent.id == event_id, Delivery.user_id == current_user.id).first()
-    if not event:
+    try:
+        return ApplicationService(db).update_event(
+            event_id, current_user.id, data.model_dump(exclude_unset=True)
+        )
+    except ApplicationEventNotFoundError:
         raise HTTPException(status_code=404, detail="事件不存在")
-    for field, value in data.model_dump(exclude_unset=True).items():
-        setattr(event, field, value)
-    db.commit()
-    db.refresh(event)
-    return event
 
 
 @router.delete("/{event_id}")
 @limiter.limit("30/minute")
 def delete_event(event_id: int, request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    event = db.query(InterviewEvent).join(Delivery).filter(InterviewEvent.id == event_id, Delivery.user_id == current_user.id).first()
-    if not event:
+    try:
+        ApplicationService(db).delete_event(event_id, current_user.id)
+    except ApplicationEventNotFoundError:
         raise HTTPException(status_code=404, detail="事件不存在")
-    db.delete(event)
-    db.commit()
     return {"ok": True}
 
 
