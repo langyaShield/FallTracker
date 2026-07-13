@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime, timedelta, timezone
 from app.database import get_db
-from app.models import InterviewEvent, Delivery, User
+from app.models import User
 from app.schemas import (
     EVENT_TYPE_LABEL_MAP,
     InterviewEventUpdate,
@@ -13,6 +13,7 @@ from app.schemas import (
 from app.auth import get_current_user
 from app.ratelimit import limiter
 from app.modules.applications.service import ApplicationEventNotFoundError, ApplicationService
+from app.modules.applications.queries import ApplicationQueryService
 
 router = APIRouter(prefix="/events", tags=["events"])
 
@@ -32,17 +33,9 @@ def list_all_events(
       - `upcoming=true`  only return events with `scheduled_at >= now()`
       - `limit=N` (>=1)  cap the number of returned events
     """
-    results = (
-        db.query(InterviewEvent, Delivery.company, Delivery.position)
-        .join(Delivery, InterviewEvent.delivery_id == Delivery.id)
-        .filter(Delivery.user_id == current_user.id)
+    rows = ApplicationQueryService(db).list_all_events_with_delivery(
+        current_user.id, upcoming=upcoming, limit=limit
     )
-    if upcoming:
-        results = results.filter(InterviewEvent.scheduled_at >= datetime.now(timezone.utc))
-    results = results.order_by(InterviewEvent.scheduled_at)
-    if limit and limit > 0:
-        results = results.limit(limit)
-    rows = results.all()
     # 使用 Pydantic v2 model_validate 安全转换 ORM 对象，避免手写字典拼装遗漏字段或污染
     out: List[InterviewEventWithDeliveryOut] = []
     for evt, company, position in rows:
@@ -104,13 +97,7 @@ def export_ics(
     Compatible with Google Calendar, Apple Calendar, Outlook, Thunderbird, etc.
     用户可下载后导入，或前端构造订阅 URL（需配合反向代理 token 鉴权）。
     """
-    events = (
-        db.query(InterviewEvent, Delivery)
-        .join(Delivery, InterviewEvent.delivery_id == Delivery.id)
-        .filter(Delivery.user_id == current_user.id)
-        .order_by(InterviewEvent.scheduled_at.asc())
-        .all()
-    )
+    events = ApplicationQueryService(db).list_events_for_ics(current_user.id)
     lines = [
         "BEGIN:VCALENDAR",
         "VERSION:2.0",

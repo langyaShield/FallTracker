@@ -118,3 +118,29 @@ class ApplicationQueryService:
             .order_by(DeliveryNote.created_at.desc())
             .all()
         )
+
+    def list_all_events_with_delivery(
+        self, user_id: int, upcoming: bool = False, limit: int = 0
+    ) -> list[tuple[InterviewEvent, str, str]]:
+        """List all interview events for a user joined with delivery company/position."""
+        results = (
+            self.db.query(InterviewEvent, Delivery.company, Delivery.position)
+            .join(Delivery, InterviewEvent.delivery_id == Delivery.id)
+            .filter(Delivery.user_id == user_id)
+        )
+        if upcoming:
+            results = results.filter(InterviewEvent.scheduled_at >= datetime.now(timezone.utc))
+        results = results.order_by(InterviewEvent.scheduled_at)
+        if limit and limit > 0:
+            results = results.limit(limit)
+        return results.all()
+
+    def list_events_for_ics(self, user_id: int) -> list[tuple[InterviewEvent, Delivery]]:
+        """List all interview events for a user joined with their delivery (for ICS export)."""
+        return (
+            self.db.query(InterviewEvent, Delivery)
+            .join(Delivery, InterviewEvent.delivery_id == Delivery.id)
+            .filter(Delivery.user_id == user_id)
+            .order_by(InterviewEvent.scheduled_at.asc())
+            .all()
+        )

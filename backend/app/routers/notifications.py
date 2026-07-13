@@ -10,16 +10,19 @@ T1-2: 站内通知中心 API。
 """
 from __future__ import annotations
 
-from typing import List
-
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.database import get_db
-from app.models import Notification, User
+from app.models import User
 from app.schemas import NotificationListOut, NotificationMarkRead, NotificationOut
 from app.ratelimit import limiter
+from app.modules.notifications.queries import NotificationQueryService
+from app.modules.notifications.service import (
+    NotificationNotFoundError,
+    NotificationService,
+)
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
 
@@ -38,20 +41,8 @@ def list_notifications(
 
     返回 `unread_count` 与 `total` 便于前端铃铛红点 + 列表分页。
     """
-    base = db.query(Notification).filter(Notification.user_id == current_user.id)
-    unread_q = base.filter(Notification.is_read.is_(False))
-    unread_count = unread_q.count()
-    total = base.count()
-
-    if only_unread:
-        q = unread_q
-    else:
-        q = base
-    items: List[Notification] = (
-        q.order_by(Notification.created_at.desc())
-        .offset(offset)
-        .limit(limit)
-        .all()
+    items, unread_count, total = NotificationQueryService(db).list_notifications(
+        current_user.id, limit, offset, only_unread
     )
     return NotificationListOut(
         items=[NotificationOut.model_validate(n) for n in items],
@@ -68,11 +59,7 @@ def get_unread_count(
     current_user: User = Depends(get_current_user),
 ):
     """轻量级未读数查询，供前端 30s 轮询。"""
-    count = (
-        db.query(Notification)
-        .filter(Notification.user_id == current_user.id, Notification.is_read.is_(False))
-        .count()
-    )
+    count = NotificationQueryService(db).count_unread(current_user.id)
     return {"unread_count": count}
 
 
@@ -89,14 +76,7 @@ def mark_read(
     - `ids=[1,2,3]`: 仅标记指定 ID
     - `ids=null/[]`: 标记当前用户全部未读
     """
-    q = db.query(Notification).filter(Notification.user_id == current_user.id)
-    if body.ids:
-        # 防御性过滤：只允许标记当前用户自己的通知
-        q = q.filter(Notification.id.in_(body.ids))
-    else:
-        q = q.filter(Notification.is_read.is_(False))
-    updated = q.update({Notification.is_read: True}, synchronize_session=False)
-    db.commit()
+    updated = NotificationService(db).mark_read(current_user.id, body.ids)
     return {"updated": updated}
 
 
@@ -108,12 +88,7 @@ def batch_delete_notifications(
     current_user: User = Depends(get_current_user),
 ):
     """Delete all notifications for the current user."""
-    deleted = (
-        db.query(Notification)
-        .filter(Notification.user_id == current_user.id)
-        .delete(synchronize_session=False)
-    )
-    db.commit()
+    deleted = NotificationService(db).delete_all(current_user.id)
     return {"deleted": deleted}
 
 
@@ -126,13 +101,8 @@ def delete_notification(
     current_user: User = Depends(get_current_user),
 ):
     """Delete a single notification."""
-    n = (
-        db.query(Notification)
-        .filter(Notification.id == notification_id, Notification.user_id == current_user.id)
-        .first()
-    )
-    if not n:
+    try:
+        NotificationService(db).delete_one(notification_id, current_user.id)
+    except NotificationNotFoundError:
         raise HTTPException(status_code=404, detail="通知不存在")
-    db.delete(n)
-    db.commit()
     return {"detail": "已删除"}
