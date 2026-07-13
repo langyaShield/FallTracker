@@ -2,7 +2,8 @@
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Upload } from '@element-plus/icons-vue'
-import api from '@/lib/api'
+import { previewCsvImport, importCsv } from '@/modules/applications/commands'
+import type { ImportResult } from '@/modules/applications/types'
 import { extractErrorMessage } from '@/lib/error'
 
 const props = defineProps<{ modelValue: boolean }>()
@@ -23,7 +24,7 @@ const rawHeaders = ref<string[]>([])
 const rows = ref<Record<string, string>[]>([])
 const totalRows = ref(0)
 const loading = ref(false)
-const result = ref<{ created: number; skipped: number; errors: string[] }>({
+const result = ref<ImportResult>({
   created: 0,
   skipped: 0,
   errors: [],
@@ -52,15 +53,11 @@ const previewCSV = async () => {
   if (!file.value) return
   loading.value = true
   try {
-    const formData = new FormData()
-    formData.append('file', file.value)
-    const res = await api.post('/deliveries/import/preview', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
-    headers.value = res.data.headers
-    rawHeaders.value = res.data.raw_headers || res.data.headers
-    rows.value = res.data.rows
-    totalRows.value = res.data.total
+    const data = await previewCsvImport(file.value)
+    headers.value = data.headers
+    rawHeaders.value = data.raw_headers || data.headers
+    rows.value = data.rows
+    totalRows.value = data.total
     // Initialize mapping from auto-detected headers
     const map: Record<string, string> = {}
     rawHeaders.value.forEach((raw, i) => {
@@ -79,8 +76,6 @@ const confirmImport = async () => {
   if (!file.value) return
   loading.value = true
   try {
-    const formData = new FormData()
-    formData.append('file', file.value)
     // Build custom mapping JSON (rawHeader -> deliveryField)
     const mappingJson: Record<string, string> = {}
     for (const [raw, field] of Object.entries(columnMapping.value)) {
@@ -88,13 +83,10 @@ const confirmImport = async () => {
         mappingJson[raw] = field
       }
     }
-    formData.append('mapping', JSON.stringify(mappingJson))
-    const res = await api.post('/deliveries/import', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
-    result.value = res.data
+    const importResult = await importCsv(file.value, mappingJson)
+    result.value = importResult
     step.value = 'result'
-    if (res.data.created > 0) {
+    if (importResult.created > 0) {
       emit('imported')
     }
   } catch (e: unknown) {

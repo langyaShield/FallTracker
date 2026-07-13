@@ -3,7 +3,19 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { ArrowLeft, ArrowRight, Plus, Edit, Delete, ChatDotRound, Document, Timer, View, CopyDocument, CirclePlus, Memo } from '@element-plus/icons-vue'
-import api from '@/lib/api'
+import {
+  getDelivery,
+  fetchEvents,
+  fetchResumeOptions,
+  fetchTagSuggestionsFromDeliveries,
+} from '@/modules/applications/queries'
+import {
+  updateDelivery as updateDeliveryCmd,
+  updateEvent as updateEventCmd,
+  createEvent as createEventCmd,
+  deleteEvent as deleteEventCmd,
+} from '@/modules/applications/commands'
+import type { Delivery, DeliveryUpdateInput, InterviewEvent, ResumeOption } from '@/modules/applications/types'
 import { STATUS_COLUMNS, EVENT_TYPE_OPTIONS, EVENT_TYPE_LABEL_MAP } from '@/lib/constants'
 import { formatDateTime } from '@/lib/format'
 import { extractErrorMessage } from '@/lib/error'
@@ -73,40 +85,9 @@ const renderedJd = computed(() => {
 const route = useRoute()
 const router = useRouter()
 
-interface InterviewEvent {
-  id: number
-  event_type: string
-  round_number: number
-  scheduled_at: string
-  duration_minutes: number
-  location?: string
-  meeting_link?: string
-  interviewer?: string
-  notes?: string
-}
-
-interface Delivery {
-  id: number
-  company: string
-  position: string
-  jd_text?: string
-  link?: string
-  status: string
-  tags: string[]
-  resume_id?: number | null
-  deadline?: string | null
-  created_at: string
-  updated_at: string
-}
-
-interface Resume {
-  id: number
-  name: string
-}
-
 const delivery = ref<Delivery | null>(null)
 const events = ref<InterviewEvent[]>([])
-const resumes = ref<Resume[]>([])
+const resumes = ref<ResumeOption[]>([])
 const loading = ref(false)
 const eventDialog = ref(false)
 const rightPanelCollapsed = ref(false)
@@ -164,7 +145,7 @@ const cancelInlineEdit = () => {
 
 const saveInlineEvent = async () => {
   try {
-    await api.put(`/events/${inlineEventForm.value.id}`, inlineEventForm.value)
+    await updateEventCmd(inlineEventForm.value.id!, inlineEventForm.value)
     ElMessage.success('更新成功')
     inlineEditingEventId.value = null
     fetchEvents()
@@ -184,8 +165,7 @@ const fabActions = [
 const fetchDetail = async () => {
   loading.value = true
   try {
-    const res = await api.get(`/deliveries/${route.params.id}`)
-    delivery.value = res.data
+    delivery.value = await getDelivery(Number(route.params.id))
   } catch (e: unknown) {
     ElMessage.error(extractErrorMessage(e, '获取详情失败'))
   } finally {
@@ -195,8 +175,7 @@ const fetchDetail = async () => {
 
 const fetchEvents = async () => {
   try {
-    const res = await api.get(`/deliveries/${route.params.id}/events`)
-    events.value = res.data
+    events.value = await fetchEvents(Number(route.params.id))
   } catch (e: unknown) {
     ElMessage.error(extractErrorMessage(e, '获取事件失败'))
   }
@@ -204,8 +183,7 @@ const fetchEvents = async () => {
 
 const fetchResumes = async () => {
   try {
-    const res = await api.get('/resumes')
-    resumes.value = res.data?.items || []
+    resumes.value = await fetchResumeOptions()
   } catch (e) {
     console.warn('简历列表加载失败', e)
   }
@@ -215,10 +193,8 @@ const fetchResumes = async () => {
 const tagOptions = ref<{ value: string; label: string }[]>([])
 const fetchTagSuggestions = async () => {
   try {
-    const res = await api.get('/deliveries')
-    const allTags = new Set<string>()
-    ;(res.data || []).forEach((d: Delivery) => (d.tags || []).forEach((t) => allTags.add(t)))
-    tagOptions.value = Array.from(allTags).map((t) => ({ value: t, label: t }))
+    const tags = await fetchTagSuggestionsFromDeliveries()
+    tagOptions.value = tags.map((t) => ({ value: t, label: t }))
   } catch (e) {
     console.warn('标签建议加载失败', e)
   }
@@ -227,7 +203,7 @@ const fetchTagSuggestions = async () => {
 const saveDelivery = async (showToast = true) => {
   if (!delivery.value) return
   try {
-    await api.put(`/deliveries/${delivery.value.id}`, delivery.value)
+    await updateDeliveryCmd(delivery.value.id, delivery.value as DeliveryUpdateInput)
     if (showToast) ElMessage.success('保存成功')
   } catch (e: unknown) {
     ElMessage.error(extractErrorMessage(e, '保存失败'))
@@ -251,10 +227,10 @@ const openEventDialog = (event?: InterviewEvent) => {
 const saveEvent = async () => {
   try {
     if (editingEvent.value.id) {
-      await api.put(`/events/${editingEvent.value.id}`, editingEvent.value)
+      await updateEventCmd(editingEvent.value.id, editingEvent.value)
       ElMessage.success('更新成功')
     } else {
-      await api.post(`/deliveries/${route.params.id}/events`, editingEvent.value)
+      await createEventCmd(Number(route.params.id), editingEvent.value)
       ElMessage.success('添加成功')
     }
     eventDialog.value = false
@@ -267,7 +243,7 @@ const saveEvent = async () => {
 const deleteEvent = async (id: number) => {
   try {
     await ElMessageBox.confirm('确定删除该事件吗？', '提示', { type: 'warning' })
-    await api.delete(`/events/${id}`)
+    await deleteEventCmd(id)
     ElMessage.success('删除成功')
     fetchEvents()
   } catch {

@@ -3,7 +3,22 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search, Download, Upload, Delete, Grid, List, ArrowDown } from '@element-plus/icons-vue'
-import api from '@/lib/api'
+import {
+  fetchDeliveries as fetchDeliveriesApi,
+  fetchResumeOptions,
+  fetchTagCounts,
+  exportDeliveriesCsv,
+} from '@/modules/applications/queries'
+import {
+  createDelivery as createDeliveryCmd,
+  updateDelivery as updateDeliveryCmd,
+  updateDeliveryStatus as updateDeliveryStatusCmd,
+  deleteDelivery as deleteDeliveryCmd,
+  batchUpdateStatus as batchUpdateStatusCmd,
+  batchUpdateTags as batchUpdateTagsCmd,
+  batchDelete as batchDeleteCmd,
+} from '@/modules/applications/commands'
+import type { Delivery, DeliveryCreateInput, ResumeOption } from '@/modules/applications/types'
 import { useUndoDelete } from '@/composables/useUndoDelete'
 import { STATUS_COLUMNS, STATUS_LABEL_MAP, STATUS_COLOR_MAP } from '@/lib/constants'
 import { formatDateTime, getDeadlineUrgency } from '@/lib/format'
@@ -14,27 +29,8 @@ import BatchImportDialog from '@/components/BatchImportDialog.vue'
 const router = useRouter()
 const route = useRoute()
 
-interface Delivery {
-  id: number
-  company: string
-  position: string
-  status: string
-  tags: string[]
-  link?: string
-  jd_text?: string
-  resume_id?: number | null
-  deadline?: string | null
-  created_at: string
-  updated_at: string
-}
-
-interface Resume {
-  id: number
-  name: string
-}
-
 const deliveries = ref<Delivery[]>([])
-const resumes = ref<Resume[]>([])
+const resumes = ref<ResumeOption[]>([])
 const loading = ref(true)
 const initialLoading = ref(true)  // 仅首次加载显示骨架屏，后续搜索/排序静默刷新
 const dialogVisible = ref(false)
@@ -45,7 +41,7 @@ const { pendingIds: deletingDeliveryIds, requestDelete: requestDeleteDelivery } 
   getId: (d) => d.id,
   getName: (d) => `${d.company} - ${d.position}`,
   deleteFn: async (d) => {
-    await api.delete(`/deliveries/${d.id}`)
+    await deleteDeliveryCmd(d.id)
   },
   onSuccess: () => fetchDeliveries(),
 })
@@ -226,7 +222,7 @@ const batchUpdateStatus = async () => {
   if (!batchStatusValue.value || selectedIds.value.size === 0) return
   batchLoading.value = true
   try {
-    await api.put('/deliveries/batch/status', {
+    await batchUpdateStatusCmd({
       ids: Array.from(selectedIds.value),
       status: batchStatusValue.value,
     })
@@ -246,7 +242,7 @@ const batchAddTags = async () => {
   if (!tag || selectedIds.value.size === 0) return
   batchLoading.value = true
   try {
-    await api.put('/deliveries/batch/tags', {
+    await batchUpdateTagsCmd({
       ids: Array.from(selectedIds.value),
       add_tags: [tag],
     })
@@ -295,9 +291,7 @@ const batchDelete = async () => {
   }
   try {
     batchLoading.value = true
-    await api.delete('/deliveries/batch', {
-      data: { ids: Array.from(selectedIds.value) },
-    })
+    await batchDeleteCmd({ ids: Array.from(selectedIds.value) })
     ElMessage.success('批量删除成功')
     selectedIds.value = new Set()
     fetchDeliveries()
@@ -313,8 +307,7 @@ const importDialogVisible = ref(false)
 
 const handleExport = async () => {
   try {
-    const res = await api.get('/deliveries/export', { responseType: 'blob' })
-    const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8' })
+    const blob = await exportDeliveriesCsv()
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -415,8 +408,7 @@ const fetchDeliveries = async () => {
   }
   try {
     const params = buildQueryParams()
-    const res = await api.get('/deliveries', { params })
-    deliveries.value = res.data || []
+    deliveries.value = await fetchDeliveriesApi(params)
   } catch (e: unknown) {
     ElMessage.error(extractErrorMessage(e, '获取投递列表失败'))
   } finally {
@@ -432,8 +424,7 @@ watch([debouncedSearch, sortOption, tagFilter], () => {
 
 const fetchResumes = async () => {
   try {
-    const res = await api.get('/resumes')
-    resumes.value = res.data?.items || []
+    resumes.value = await fetchResumeOptions()
   } catch (e) {
     console.warn('简历列表加载失败', e)
   }
@@ -441,8 +432,8 @@ const fetchResumes = async () => {
 
 const fetchTagSuggestions = async () => {
   try {
-    const res = await api.get('/deliveries/tags')
-    tagSuggestions.value = (res.data || []).map((t: { tag: string; count: number }) => ({
+    const tags = await fetchTagCounts()
+    tagSuggestions.value = tags.map((t) => ({
       value: t.tag,
       label: `${t.tag} (${t.count})`,
     }))
@@ -463,10 +454,10 @@ const saveDelivery = async () => {
   }
   try {
     if (editing.value.id) {
-      await api.put(`/deliveries/${editing.value.id}`, editing.value)
+      await updateDeliveryCmd(editing.value.id, editing.value)
       ElMessage.success('更新成功')
     } else {
-      await api.post('/deliveries', editing.value)
+      await createDeliveryCmd(editing.value as DeliveryCreateInput)
       ElMessage.success('添加成功')
     }
     dialogVisible.value = false
@@ -485,7 +476,7 @@ const highlightedId = ref<number | null>(null)
 
 const updateStatus = async (item: Delivery, newStatus: string) => {
   try {
-    await api.put(`/deliveries/${item.id}`, { status: newStatus })
+    await updateDeliveryStatusCmd(item.id, newStatus)
     item.status = newStatus
     // Flash green highlight on the card
     highlightedId.value = item.id
