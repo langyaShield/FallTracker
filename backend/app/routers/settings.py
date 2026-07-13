@@ -1,33 +1,27 @@
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models import UserSettings, User
+from app.models import User
 from app.schemas import UserSettingsUpdate, UserSettingsOut, EmailSettingsUpdate, EmailSettingsOut, EmailTestResult, LLMTestResult, CosSettingsUpdate, CosSettingsOut
 from app.auth import get_current_user
 from app.config import settings
-from app.crypto import encrypt_value, decrypt_value
+from app.crypto import decrypt_value
 from email.mime.text import MIMEText
 import smtplib
 import httpx
 from app.ratelimit import limiter
+from app.modules.settings.service import SettingsService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
 
-def get_user_settings(db: Session, user_id: int) -> UserSettings:
-    """Get or create user settings row."""
-    s = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
-    if not s:
-        s = UserSettings(user_id=user_id)
-        db.add(s)
-        db.commit()
-        db.refresh(s)
-    return s
-
-
 def get_llm_config(db: Session, user_id: int) -> dict:
     """Get effective LLM config: user settings with global fallback."""
-    s = get_user_settings(db, user_id)
+    s = SettingsService(db).get_or_create_user_settings(user_id)
     return {
         "llm_api_key": decrypt_value(s.llm_api_key) or settings.LLM_API_KEY,
         "llm_api_base": s.llm_api_base or settings.LLM_API_BASE,
@@ -50,7 +44,7 @@ def _mask(value: str | None) -> str:
 @router.get("", response_model=UserSettingsOut)
 @limiter.limit("60/minute")
 def read_settings(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    s = get_user_settings(db, current_user.id)
+    s = SettingsService(db).get_or_create_user_settings(current_user.id)
     key = decrypt_value(s.llm_api_key)
     if key and len(key) > 4:
         key = "*" * (len(key) - 4) + key[-4:]
@@ -70,17 +64,7 @@ def update_settings(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    s = get_user_settings(db, current_user.id)
-    for field, value in data.model_dump(exclude_unset=True).items():
-        # Skip masked API keys to avoid overwriting real key with asterisks
-        if field == "llm_api_key" and value and all(c == "*" for c in value):
-            continue
-        # Encrypt sensitive fields before storage
-        if field == "llm_api_key" and value:
-            value = encrypt_value(value)
-        setattr(s, field, value)
-    db.commit()
-    db.refresh(s)
+    s = SettingsService(db).update_settings(current_user.id, data.model_dump(exclude_unset=True))
     key = decrypt_value(s.llm_api_key)
     if key and len(key) > 4:
         key = "*" * (len(key) - 4) + key[-4:]
@@ -100,7 +84,7 @@ def test_llm_settings(
     current_user: User = Depends(get_current_user),
 ):
     """Test the LLM API connection using the saved configuration."""
-    s = get_user_settings(db, current_user.id)
+    s = SettingsService(db).get_or_create_user_settings(current_user.id)
     api_key = decrypt_value(s.llm_api_key) or settings.LLM_API_KEY
     api_base = s.llm_api_base or settings.LLM_API_BASE
     model = s.llm_model or settings.LLM_MODEL
@@ -110,7 +94,7 @@ def test_llm_settings(
     if not api_base:
         raise HTTPException(status_code=400, detail="API Base URL 未配置，请先保存 LLM 配置")
 
-    # P1-3: SSRF 防护 — 校验 api_base 不指向内网地址
+    # P1-3: SSRF 防护 - 校验 api_base 不指向内网地址
     from urllib.parse import urlparse
     import ipaddress, socket
     parsed = urlparse(api_base)
@@ -180,7 +164,7 @@ def test_llm_settings(
 @limiter.limit("60/minute")
 def read_email_settings(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Get email SMTP settings. Password is masked for security."""
-    s = get_user_settings(db, current_user.id)
+    s = SettingsService(db).get_or_create_user_settings(current_user.id)
     pwd = decrypt_value(s.smtp_password)
     if pwd and len(pwd) > 4:
         pwd = "*" * (len(pwd) - 4) + pwd[-4:]
@@ -202,17 +186,7 @@ def update_email_settings(
     current_user: User = Depends(get_current_user),
 ):
     """Update email SMTP settings. Masked passwords (all asterisks) are ignored to prevent overwriting."""
-    s = get_user_settings(db, current_user.id)
-    for field, value in data.model_dump(exclude_unset=True).items():
-        # Skip masked passwords to avoid overwriting real password with asterisks
-        if field == "smtp_password" and value and all(c == "*" for c in value):
-            continue
-        # Encrypt sensitive fields before storage
-        if field == "smtp_password" and value:
-            value = encrypt_value(value)
-        setattr(s, field, value)
-    db.commit()
-    db.refresh(s)
+    s = SettingsService(db).update_email_settings(current_user.id, data.model_dump(exclude_unset=True))
     pwd = decrypt_value(s.smtp_password)
     if pwd and len(pwd) > 4:
         pwd = "*" * (len(pwd) - 4) + pwd[-4:]
@@ -260,7 +234,7 @@ def test_email_settings(
     current_user: User = Depends(get_current_user),
 ):
     """Send a test email using the saved SMTP configuration."""
-    s = get_user_settings(db, current_user.id)
+    s = SettingsService(db).get_or_create_user_settings(current_user.id)
     server = s.smtp_server
     port = s.smtp_port or 587
     username = s.smtp_username or ""
@@ -294,7 +268,7 @@ def test_email_settings(
 @limiter.limit("60/minute")
 def read_cos_settings(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Get COS settings. SecretId/SecretKey are masked for security."""
-    s = get_user_settings(db, current_user.id)
+    s = SettingsService(db).get_or_create_user_settings(current_user.id)
     return CosSettingsOut(
         cos_secret_id=_mask(decrypt_value(s.cos_secret_id)),
         cos_secret_key=_mask(decrypt_value(s.cos_secret_key)),
@@ -314,20 +288,7 @@ def update_cos_settings(
     current_user: User = Depends(get_current_user),
 ):
     """Update COS settings. Masked secrets (all asterisks) are ignored to prevent overwriting."""
-    s = get_user_settings(db, current_user.id)
-    for field, value in data.model_dump(exclude_unset=True).items():
-        # Skip masked values
-        if field in ("cos_secret_id", "cos_secret_key") and value and all(c == "*" for c in value):
-            continue
-        # Encrypt sensitive fields before storage
-        if field in ("cos_secret_id", "cos_secret_key") and value:
-            value = encrypt_value(value)
-        # cos_auto_backup_hours: 0 means disabled, store as None
-        if field == "cos_auto_backup_hours" and value == 0:
-            value = None
-        setattr(s, field, value)
-    db.commit()
-    db.refresh(s)
+    s = SettingsService(db).update_cos_settings(current_user.id, data.model_dump(exclude_unset=True))
     return CosSettingsOut(
         cos_secret_id=_mask(decrypt_value(s.cos_secret_id)),
         cos_secret_key=_mask(decrypt_value(s.cos_secret_key)),

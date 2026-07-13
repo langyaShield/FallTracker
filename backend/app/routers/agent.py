@@ -550,9 +550,9 @@ def retrigger_resume_ocr(
     r.ocr_progress = 0
     r.ocr_text = None
     db.commit()
-    from app.routers.resumes import _run_ocr_background
+    from app.modules.resumes.service import trigger_ocr_background
 
-    threading.Thread(target=_run_ocr_background, args=(r.id, r.file_path), daemon=True).start()
+    threading.Thread(target=trigger_ocr_background, args=(r.id, r.file_path), daemon=True).start()
     return {"success": True, "message": "已重新触发 OCR"}
 
 

@@ -2,12 +2,26 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, ArrowRight, Plus, Edit, Delete, ChatDotRound, Document, Timer, View, CopyDocument, CirclePlus, Memo } from '@element-plus/icons-vue'
-import api from '@/lib/api'
-import { STATUS_COLUMNS, EVENT_TYPE_OPTIONS, EVENT_TYPE_LABEL_MAP } from '@/lib/constants'
+import { ArrowLeft, ArrowRight, Plus, Edit, View, CopyDocument, CirclePlus, Memo } from '@element-plus/icons-vue'
+import {
+  getDelivery,
+  fetchEvents,
+  fetchResumeOptions,
+  fetchTagSuggestionsFromDeliveries,
+} from '@/modules/applications/queries'
+import {
+  updateDelivery as updateDeliveryCmd,
+  updateEvent as updateEventCmd,
+  createEvent as createEventCmd,
+  deleteEvent as deleteEventCmd,
+} from '@/modules/applications/commands'
+import type { Delivery, DeliveryUpdateInput, InterviewEvent, ResumeOption } from '@/modules/applications/types'
+import { STATUS_COLUMNS } from '@/lib/constants'
 import { formatDateTime } from '@/lib/format'
 import { extractErrorMessage } from '@/lib/error'
 import PageHeader from '@/components/PageHeader.vue'
+import EventTimeline from '@/components/applications/EventTimeline.vue'
+import EventEditDialog from '@/components/applications/EventEditDialog.vue'
 
 /** 轻量级 Markdown 渲染器（XSS 安全） */
 function renderMarkdown(text: string): string {
@@ -73,40 +87,9 @@ const renderedJd = computed(() => {
 const route = useRoute()
 const router = useRouter()
 
-interface InterviewEvent {
-  id: number
-  event_type: string
-  round_number: number
-  scheduled_at: string
-  duration_minutes: number
-  location?: string
-  meeting_link?: string
-  interviewer?: string
-  notes?: string
-}
-
-interface Delivery {
-  id: number
-  company: string
-  position: string
-  jd_text?: string
-  link?: string
-  status: string
-  tags: string[]
-  resume_id?: number | null
-  deadline?: string | null
-  created_at: string
-  updated_at: string
-}
-
-interface Resume {
-  id: number
-  name: string
-}
-
 const delivery = ref<Delivery | null>(null)
 const events = ref<InterviewEvent[]>([])
-const resumes = ref<Resume[]>([])
+const resumes = ref<ResumeOption[]>([])
 const loading = ref(false)
 const eventDialog = ref(false)
 const rightPanelCollapsed = ref(false)
@@ -164,7 +147,7 @@ const cancelInlineEdit = () => {
 
 const saveInlineEvent = async () => {
   try {
-    await api.put(`/events/${inlineEventForm.value.id}`, inlineEventForm.value)
+    await updateEventCmd(inlineEventForm.value.id!, inlineEventForm.value)
     ElMessage.success('更新成功')
     inlineEditingEventId.value = null
     fetchEvents()
@@ -184,8 +167,7 @@ const fabActions = [
 const fetchDetail = async () => {
   loading.value = true
   try {
-    const res = await api.get(`/deliveries/${route.params.id}`)
-    delivery.value = res.data
+    delivery.value = await getDelivery(Number(route.params.id))
   } catch (e: unknown) {
     ElMessage.error(extractErrorMessage(e, '获取详情失败'))
   } finally {
@@ -195,8 +177,7 @@ const fetchDetail = async () => {
 
 const fetchEvents = async () => {
   try {
-    const res = await api.get(`/deliveries/${route.params.id}/events`)
-    events.value = res.data
+    events.value = await fetchEvents(Number(route.params.id))
   } catch (e: unknown) {
     ElMessage.error(extractErrorMessage(e, '获取事件失败'))
   }
@@ -204,8 +185,7 @@ const fetchEvents = async () => {
 
 const fetchResumes = async () => {
   try {
-    const res = await api.get('/resumes')
-    resumes.value = res.data?.items || []
+    resumes.value = await fetchResumeOptions()
   } catch (e) {
     console.warn('简历列表加载失败', e)
   }
@@ -215,10 +195,8 @@ const fetchResumes = async () => {
 const tagOptions = ref<{ value: string; label: string }[]>([])
 const fetchTagSuggestions = async () => {
   try {
-    const res = await api.get('/deliveries')
-    const allTags = new Set<string>()
-    ;(res.data || []).forEach((d: Delivery) => (d.tags || []).forEach((t) => allTags.add(t)))
-    tagOptions.value = Array.from(allTags).map((t) => ({ value: t, label: t }))
+    const tags = await fetchTagSuggestionsFromDeliveries()
+    tagOptions.value = tags.map((t) => ({ value: t, label: t }))
   } catch (e) {
     console.warn('标签建议加载失败', e)
   }
@@ -227,7 +205,7 @@ const fetchTagSuggestions = async () => {
 const saveDelivery = async (showToast = true) => {
   if (!delivery.value) return
   try {
-    await api.put(`/deliveries/${delivery.value.id}`, delivery.value)
+    await updateDeliveryCmd(delivery.value.id, delivery.value as DeliveryUpdateInput)
     if (showToast) ElMessage.success('保存成功')
   } catch (e: unknown) {
     ElMessage.error(extractErrorMessage(e, '保存失败'))
@@ -251,10 +229,10 @@ const openEventDialog = (event?: InterviewEvent) => {
 const saveEvent = async () => {
   try {
     if (editingEvent.value.id) {
-      await api.put(`/events/${editingEvent.value.id}`, editingEvent.value)
+      await updateEventCmd(editingEvent.value.id, editingEvent.value)
       ElMessage.success('更新成功')
     } else {
-      await api.post(`/deliveries/${route.params.id}/events`, editingEvent.value)
+      await createEventCmd(Number(route.params.id), editingEvent.value)
       ElMessage.success('添加成功')
     }
     eventDialog.value = false
@@ -267,7 +245,7 @@ const saveEvent = async () => {
 const deleteEvent = async (id: number) => {
   try {
     await ElMessageBox.confirm('确定删除该事件吗？', '提示', { type: 'warning' })
-    await api.delete(`/events/${id}`)
+    await deleteEventCmd(id)
     ElMessage.success('删除成功')
     fetchEvents()
   } catch {
@@ -376,79 +354,16 @@ onMounted(() => {
       </button>
 
       <div v-show="!rightPanelCollapsed" class="detail-right">
-        <el-card class="events-card">
-          <template #header>
-            <div class="card-header">
-              <span>事件时间线</span>
-              <el-button type="primary" size="small" :icon="Plus" @click="openEventDialog()">添加事件</el-button>
-            </div>
-          </template>
-          <el-timeline>
-            <el-timeline-item
-              v-for="evt in events"
-              :key="evt.id"
-              :type="evt.event_type === 'interview' ? 'primary' : evt.event_type === 'written' ? 'warning' : 'info'"
-              :icon="evt.event_type === 'interview' ? ChatDotRound : evt.event_type === 'written' ? Document : Timer"
-            >
-              <div v-if="inlineEditingEventId === evt.id" class="event-inline-form">
-                <el-form label-width="70px" size="small">
-                  <el-form-item label="类型">
-                    <el-select v-model="inlineEventForm.event_type" style="width: 100%">
-                      <el-option v-for="o in EVENT_TYPE_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
-                    </el-select>
-                  </el-form-item>
-                  <el-form-item label="轮次">
-                    <el-input-number v-model="inlineEventForm.round_number" :min="1" style="width: 100%" />
-                  </el-form-item>
-                  <el-form-item label="时间">
-                    <el-date-picker
-                      v-model="inlineEventForm.scheduled_at"
-                      type="datetime"
-                      placeholder="选择日期时间"
-                      style="width: 100%"
-                      value-format="YYYY-MM-DDTHH:mm"
-                    />
-                  </el-form-item>
-                  <el-form-item label="时长">
-                    <el-input-number v-model="inlineEventForm.duration_minutes" :min="15" :step="15" style="width: 100%" />
-                  </el-form-item>
-                  <el-form-item label="地点">
-                    <el-input v-model="inlineEventForm.location" placeholder="面试地点" />
-                  </el-form-item>
-                  <el-form-item label="会议">
-                    <el-input v-model="inlineEventForm.meeting_link" placeholder="腾讯会议/Zoom链接" />
-                  </el-form-item>
-                  <el-form-item label="面试官">
-                    <el-input v-model="inlineEventForm.interviewer" placeholder="面试官姓名" />
-                  </el-form-item>
-                  <el-form-item label="备注">
-                    <el-input v-model="inlineEventForm.notes" type="textarea" :rows="2" placeholder="备注信息" />
-                  </el-form-item>
-                  <el-form-item>
-                    <el-button type="primary" size="small" @click="saveInlineEvent">保存</el-button>
-                    <el-button size="small" @click="cancelInlineEdit">取消</el-button>
-                  </el-form-item>
-                </el-form>
-              </div>
-              <div v-else class="event-item">
-                <div class="event-header">
-                  <span class="event-type">{{ EVENT_TYPE_LABEL_MAP[evt.event_type] || evt.event_type }}</span>
-                  <span class="event-round">第{{ evt.round_number }}轮</span>
-                  <el-button text size="small" :icon="Edit" aria-label="编辑事件" @click="startInlineEdit(evt)" />
-                  <el-button text size="small" type="danger" :icon="Delete" aria-label="删除事件" @click="deleteEvent(evt.id)" />
-                </div>
-                <div class="event-time">{{ formatDateTime(evt.scheduled_at) }} · {{ evt.duration_minutes }}分钟</div>
-                <div v-if="evt.interviewer" class="event-meta">面试官：{{ evt.interviewer }}</div>
-                <div v-if="evt.location" class="event-meta">地点：{{ evt.location }}</div>
-                <div v-if="evt.meeting_link" class="event-meta">
-                  会议：<a :href="evt.meeting_link" target="_blank" rel="noopener noreferrer">{{ evt.meeting_link }}</a>
-                </div>
-                <div v-if="evt.notes" class="event-notes">{{ evt.notes }}</div>
-              </div>
-            </el-timeline-item>
-          </el-timeline>
-          <el-empty v-if="events.length === 0" description="暂无事件" />
-        </el-card>
+        <EventTimeline
+          :events="events"
+          :inline-editing-event-id="inlineEditingEventId"
+          :inline-event-form="inlineEventForm"
+          @start-inline-edit="startInlineEdit"
+          @cancel-inline-edit="cancelInlineEdit"
+          @save-inline-event="saveInlineEvent"
+          @delete-event="deleteEvent"
+          @open-event-dialog="openEventDialog"
+        />
       </div>
     </div>
 
@@ -478,46 +393,11 @@ onMounted(() => {
       </transition>
     </div>
 
-    <el-dialog v-model="eventDialog" :title="editingEvent.id ? '编辑事件' : '添加事件'" width="500px">
-      <el-form label-width="80px">
-        <el-form-item label="类型">
-          <el-select v-model="editingEvent.event_type" style="width: 100%">
-            <el-option v-for="o in EVENT_TYPE_OPTIONS" :key="o.value" :label="o.label" :value="o.value" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="轮次">
-          <el-input-number v-model="editingEvent.round_number" :min="1" style="width: 100%" />
-        </el-form-item>
-        <el-form-item label="时间">
-          <el-date-picker
-            v-model="editingEvent.scheduled_at"
-            type="datetime"
-            placeholder="选择日期时间"
-            style="width: 100%"
-            value-format="YYYY-MM-DDTHH:mm"
-          />
-        </el-form-item>
-        <el-form-item label="时长">
-          <el-input-number v-model="editingEvent.duration_minutes" :min="15" :step="15" style="width: 100%" />
-        </el-form-item>
-        <el-form-item label="地点">
-          <el-input v-model="editingEvent.location" placeholder="面试地点" />
-        </el-form-item>
-        <el-form-item label="会议链接">
-          <el-input v-model="editingEvent.meeting_link" placeholder="腾讯会议/Zoom链接" />
-        </el-form-item>
-        <el-form-item label="面试官">
-          <el-input v-model="editingEvent.interviewer" placeholder="面试官姓名" />
-        </el-form-item>
-        <el-form-item label="备注">
-          <el-input v-model="editingEvent.notes" type="textarea" :rows="3" placeholder="备注信息" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="eventDialog = false">取消</el-button>
-        <el-button type="primary" @click="saveEvent">保存</el-button>
-      </template>
-    </el-dialog>
+    <EventEditDialog
+      v-model="eventDialog"
+      :editing-event="editingEvent"
+      @save="saveEvent"
+    />
   </div>
 </template>
 
@@ -604,58 +484,6 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 4px;
-}
-
-.event-item {
-  padding: 8px 0;
-}
-
-.event-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 6px;
-}
-
-.event-type {
-  font-weight: 600;
-  color: #1e3a5f;
-}
-
-.event-round {
-  font-size: 12px;
-  color: #f59e0b;
-  background: #fef3c7;
-  padding: 2px 8px;
-  border-radius: 4px;
-}
-
-.event-time {
-  font-size: 13px;
-  color: #64748b;
-  margin-bottom: 4px;
-}
-
-.event-meta {
-  font-size: 13px;
-  color: #64748b;
-}
-
-.event-notes {
-  margin-top: 8px;
-  padding: 8px;
-  background: #f8fafc;
-  border-radius: 6px;
-  font-size: 13px;
-  color: #475569;
-}
-
-.event-inline-form {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 12px;
-  margin: 4px 0 8px;
 }
 
 .auto-save-hint {

@@ -57,6 +57,25 @@ def test_update_delivery_status(client, auth_headers):
     assert r.status_code == 200
     assert r.json()["status"] == "interview"
 
+    logs = client.get(f"/api/deliveries/{delivery['id']}/logs", headers=auth_headers)
+    assert logs.status_code == 200
+    assert len(logs.json()) == 1
+    assert logs.json()[0]["action"] == "status_change"
+
+
+def test_update_delivery_without_status_does_not_create_status_log(client, auth_headers):
+    delivery = _create(client, auth_headers)
+    response = client.put(
+        f"/api/deliveries/{delivery['id']}",
+        json={"company": "Renamed Acme"},
+        headers=auth_headers,
+    )
+    assert response.status_code == 200
+
+    logs = client.get(f"/api/deliveries/{delivery['id']}/logs", headers=auth_headers)
+    assert logs.status_code == 200
+    assert logs.json() == []
+
 
 def test_delete_delivery(client, auth_headers):
     delivery = _create(client, auth_headers)

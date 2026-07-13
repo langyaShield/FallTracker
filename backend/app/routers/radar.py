@@ -8,9 +8,15 @@ Crawler / radar HTTP endpoints.
 - engine: 单次执行编排
 - scheduler: 后台调度
 
-本文件仅保留 HTTP 路由层：参数解析 / 鉴权 / 数据库 CRUD / 派发到后台任务。
+配置 CRUD 与结果查询的持久化逻辑拆分至 `app.modules.radar`：
+- repository: ORM 持久化
+- service: 写操作与事务管理
+- queries: 只读操作
+
+本文件仅保留 HTTP 路由层：参数解析 / 鉴权 / 派发到后台任务。
 re-export `check_and_run_due_crawlers` 与 `execute_crawler` 以保持 main.py 与历史调用方不变。
 """
+import json
 from typing import List
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
@@ -18,7 +24,9 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.database import get_db
-from app.models import CrawlerConfig, CrawlerResult, User
+from app.models import User
+from app.modules.radar.queries import RadarQueryService
+from app.modules.radar.service import CrawlerConfigNotFoundError, RadarService
 from app.schemas import (
     CrawlerConfigCreate,
     CrawlerConfigOut,
@@ -50,12 +58,7 @@ router = APIRouter(prefix="/radar", tags=["radar"])
 @limiter.limit("60/minute")
 def list_configs(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """List all crawler configs for the current user."""
-    return (
-        db.query(CrawlerConfig)
-        .filter(CrawlerConfig.user_id == current_user.id)
-        .order_by(CrawlerConfig.created_at.desc())
-        .all()
-    )
+    return RadarQueryService(db).list_configs(current_user.id)
 
 
 @router.post("/configs", response_model=CrawlerConfigOut, status_code=201)
@@ -67,21 +70,10 @@ def create_config(
     current_user: User = Depends(get_current_user),
 ):
     """Create a new crawler config."""
-    config = CrawlerConfig(
+    return RadarService(db).create_config(
         user_id=current_user.id,
-        name=data.name,
-        url=data.url,
-        css_selector=data.css_selector,
-        interval_hours=data.interval_hours,
-        target_description=data.target_description,
-        email_to=data.email_to,
-        is_active=data.is_active,
-        extra_headers=data.extra_headers,
+        attributes=data.model_dump(),
     )
-    db.add(config)
-    db.commit()
-    db.refresh(config)
-    return config
 
 
 @router.put("/configs/{config_id}", response_model=CrawlerConfigOut)
@@ -92,18 +84,14 @@ def update_config(
     current_user: User = Depends(get_current_user),
 ):
     """Update a crawler config."""
-    config = (
-        db.query(CrawlerConfig)
-        .filter(CrawlerConfig.id == config_id, CrawlerConfig.user_id == current_user.id)
-        .first()
-    )
-    if not config:
+    try:
+        return RadarService(db).update_config(
+            config_id=config_id,
+            user_id=current_user.id,
+            changes=data.model_dump(exclude_unset=True),
+        )
+    except CrawlerConfigNotFoundError:
         raise HTTPException(status_code=404, detail="爬虫配置不存在")
-    for field, value in data.model_dump(exclude_unset=True).items():
-        setattr(config, field, value)
-    db.commit()
-    db.refresh(config)
-    return config
 
 
 @router.delete("/configs/{config_id}")
@@ -113,17 +101,10 @@ def delete_config(
     current_user: User = Depends(get_current_user),
 ):
     """Delete a crawler config and its results."""
-    config = (
-        db.query(CrawlerConfig)
-        .filter(CrawlerConfig.id == config_id, CrawlerConfig.user_id == current_user.id)
-        .first()
-    )
-    if not config:
+    try:
+        RadarService(db).delete_config(config_id, current_user.id)
+    except CrawlerConfigNotFoundError:
         raise HTTPException(status_code=404, detail="爬虫配置不存在")
-    # Cascade delete results
-    db.query(CrawlerResult).filter(CrawlerResult.config_id == config_id).delete()
-    db.delete(config)
-    db.commit()
     return {"detail": "已删除"}
 
 
@@ -142,12 +123,9 @@ def run_crawler_manual(
     current_user: User = Depends(get_current_user),
 ):
     """Manually trigger a crawler run (runs in background)."""
-    config = (
-        db.query(CrawlerConfig)
-        .filter(CrawlerConfig.id == config_id, CrawlerConfig.user_id == current_user.id)
-        .first()
-    )
-    if not config:
+    try:
+        RadarService(db).run_crawler_manual(config_id, current_user.id)
+    except CrawlerConfigNotFoundError:
         raise HTTPException(status_code=404, detail="爬虫配置不存在")
 
     background_tasks.add_task(_run_crawler_locked, config_id)
@@ -172,20 +150,10 @@ def list_results(
     current_user: User = Depends(get_current_user),
 ):
     """List crawl results for a config (most recent first)."""
-    config = (
-        db.query(CrawlerConfig)
-        .filter(CrawlerConfig.id == config_id, CrawlerConfig.user_id == current_user.id)
-        .first()
-    )
-    if not config:
+    try:
+        return RadarQueryService(db).list_results(config_id, current_user.id, limit)
+    except CrawlerConfigNotFoundError:
         raise HTTPException(status_code=404, detail="爬虫配置不存在")
-    return (
-        db.query(CrawlerResult)
-        .filter(CrawlerResult.config_id == config_id)
-        .order_by(CrawlerResult.created_at.desc())
-        .limit(limit)
-        .all()
-    )
 
 
 # ─────────────────────────────────────────────

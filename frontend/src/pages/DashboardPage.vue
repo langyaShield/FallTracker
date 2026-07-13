@@ -3,38 +3,35 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Search, Download, Upload, Delete, Grid, List, ArrowDown } from '@element-plus/icons-vue'
-import api from '@/lib/api'
+import {
+  fetchDeliveries as fetchDeliveriesApi,
+  fetchResumeOptions,
+  fetchTagCounts,
+  exportDeliveriesCsv,
+} from '@/modules/applications/queries'
+import {
+  createDelivery as createDeliveryCmd,
+  updateDelivery as updateDeliveryCmd,
+  updateDeliveryStatus as updateDeliveryStatusCmd,
+  deleteDelivery as deleteDeliveryCmd,
+  batchUpdateStatus as batchUpdateStatusCmd,
+  batchUpdateTags as batchUpdateTagsCmd,
+  batchDelete as batchDeleteCmd,
+} from '@/modules/applications/commands'
+import type { Delivery, DeliveryCreateInput, ResumeOption } from '@/modules/applications/types'
 import { useUndoDelete } from '@/composables/useUndoDelete'
 import { STATUS_COLUMNS, STATUS_LABEL_MAP, STATUS_COLOR_MAP } from '@/lib/constants'
-import { formatDateTime, getDeadlineUrgency } from '@/lib/format'
+import { formatDateTime } from '@/lib/format'
 import { extractErrorMessage } from '@/lib/error'
 import PageHeader from '@/components/PageHeader.vue'
 import BatchImportDialog from '@/components/BatchImportDialog.vue'
+import KanbanCard from '@/components/applications/KanbanCard.vue'
 
 const router = useRouter()
 const route = useRoute()
 
-interface Delivery {
-  id: number
-  company: string
-  position: string
-  status: string
-  tags: string[]
-  link?: string
-  jd_text?: string
-  resume_id?: number | null
-  deadline?: string | null
-  created_at: string
-  updated_at: string
-}
-
-interface Resume {
-  id: number
-  name: string
-}
-
 const deliveries = ref<Delivery[]>([])
-const resumes = ref<Resume[]>([])
+const resumes = ref<ResumeOption[]>([])
 const loading = ref(true)
 const initialLoading = ref(true)  // 仅首次加载显示骨架屏，后续搜索/排序静默刷新
 const dialogVisible = ref(false)
@@ -45,7 +42,7 @@ const { pendingIds: deletingDeliveryIds, requestDelete: requestDeleteDelivery } 
   getId: (d) => d.id,
   getName: (d) => `${d.company} - ${d.position}`,
   deleteFn: async (d) => {
-    await api.delete(`/deliveries/${d.id}`)
+    await deleteDeliveryCmd(d.id)
   },
   onSuccess: () => fetchDeliveries(),
 })
@@ -226,7 +223,7 @@ const batchUpdateStatus = async () => {
   if (!batchStatusValue.value || selectedIds.value.size === 0) return
   batchLoading.value = true
   try {
-    await api.put('/deliveries/batch/status', {
+    await batchUpdateStatusCmd({
       ids: Array.from(selectedIds.value),
       status: batchStatusValue.value,
     })
@@ -246,7 +243,7 @@ const batchAddTags = async () => {
   if (!tag || selectedIds.value.size === 0) return
   batchLoading.value = true
   try {
-    await api.put('/deliveries/batch/tags', {
+    await batchUpdateTagsCmd({
       ids: Array.from(selectedIds.value),
       add_tags: [tag],
     })
@@ -295,9 +292,7 @@ const batchDelete = async () => {
   }
   try {
     batchLoading.value = true
-    await api.delete('/deliveries/batch', {
-      data: { ids: Array.from(selectedIds.value) },
-    })
+    await batchDeleteCmd({ ids: Array.from(selectedIds.value) })
     ElMessage.success('批量删除成功')
     selectedIds.value = new Set()
     fetchDeliveries()
@@ -313,8 +308,7 @@ const importDialogVisible = ref(false)
 
 const handleExport = async () => {
   try {
-    const res = await api.get('/deliveries/export', { responseType: 'blob' })
-    const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8' })
+    const blob = await exportDeliveriesCsv()
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -331,14 +325,6 @@ const handleExport = async () => {
 
 const handleImported = () => {
   fetchDeliveries()
-}
-
-// --- Deadline urgency ---
-const urgencyBorderColor = (urgency: string): string => {
-  if (urgency === 'expired') return '#991b1b'
-  if (urgency === 'urgent') return '#ef4444'
-  if (urgency === 'warning') return '#f97316'
-  return 'transparent'
 }
 
 // --- Drag & Drop handlers ---
@@ -415,8 +401,7 @@ const fetchDeliveries = async () => {
   }
   try {
     const params = buildQueryParams()
-    const res = await api.get('/deliveries', { params })
-    deliveries.value = res.data || []
+    deliveries.value = await fetchDeliveriesApi(params)
   } catch (e: unknown) {
     ElMessage.error(extractErrorMessage(e, '获取投递列表失败'))
   } finally {
@@ -432,8 +417,7 @@ watch([debouncedSearch, sortOption, tagFilter], () => {
 
 const fetchResumes = async () => {
   try {
-    const res = await api.get('/resumes')
-    resumes.value = res.data?.items || []
+    resumes.value = await fetchResumeOptions()
   } catch (e) {
     console.warn('简历列表加载失败', e)
   }
@@ -441,8 +425,8 @@ const fetchResumes = async () => {
 
 const fetchTagSuggestions = async () => {
   try {
-    const res = await api.get('/deliveries/tags')
-    tagSuggestions.value = (res.data || []).map((t: { tag: string; count: number }) => ({
+    const tags = await fetchTagCounts()
+    tagSuggestions.value = tags.map((t) => ({
       value: t.tag,
       label: `${t.tag} (${t.count})`,
     }))
@@ -463,10 +447,10 @@ const saveDelivery = async () => {
   }
   try {
     if (editing.value.id) {
-      await api.put(`/deliveries/${editing.value.id}`, editing.value)
+      await updateDeliveryCmd(editing.value.id, editing.value)
       ElMessage.success('更新成功')
     } else {
-      await api.post('/deliveries', editing.value)
+      await createDeliveryCmd(editing.value as DeliveryCreateInput)
       ElMessage.success('添加成功')
     }
     dialogVisible.value = false
@@ -485,7 +469,7 @@ const highlightedId = ref<number | null>(null)
 
 const updateStatus = async (item: Delivery, newStatus: string) => {
   try {
-    await api.put(`/deliveries/${item.id}`, { status: newStatus })
+    await updateDeliveryStatusCmd(item.id, newStatus)
     item.status = newStatus
     // Flash green highlight on the card
     highlightedId.value = item.id
@@ -636,64 +620,19 @@ onMounted(() => {
           @dragleave="onDragLeave($event, col.key)"
           @drop="onDrop($event, col.key)"
         >
-          <div
+          <KanbanCard
             v-for="item in groupedDeliveries[col.key]"
             :key="item.id"
-            class="kanban-card"
-            :class="{
-              'card-urgent': getDeadlineUrgency(item.deadline) === 'urgent',
-              'card-warning': getDeadlineUrgency(item.deadline) === 'warning',
-              'card-expired': getDeadlineUrgency(item.deadline) === 'expired',
-              'card-selected': selectedIds.has(item.id),
-              'card-highlighted': highlightedId === item.id,
-            }"
-            :style="{ borderLeftColor: urgencyBorderColor(getDeadlineUrgency(item.deadline)) }"
-            draggable="true"
-            tabindex="0"
-            role="button"
-            :aria-label="`${item.company} - ${item.position}`"
-            @click.stop="onCardClick(item)"
-            @keydown.enter.prevent="onCardClick(item)"
-            @keydown.space.prevent="onCardClick(item)"
-            @dragstart="onDragStart($event, item)"
+            :item="item"
+            :batch-mode="batchMode"
+            :selected="selectedIds.has(item.id)"
+            :highlighted="highlightedId === item.id"
+            @click="onCardClick"
+            @delete="deleteDelivery"
+            @toggle-select="toggleSelect"
+            @dragstart="onDragStart"
             @dragend="onDragEnd"
-          >
-            <div class="card-top-row">
-              <el-checkbox
-                v-if="batchMode"
-                :model-value="selectedIds.has(item.id)"
-                @click.stop
-                @change="toggleSelect(item.id)"
-                class="batch-checkbox"
-              />
-              <div class="card-header">
-                <span class="company">{{ item.company }}</span>
-                <el-button
-                  v-if="!batchMode"
-                  text
-                  size="small"
-                  type="danger"
-                  @click.stop="deleteDelivery(item)"
-                  class="delete-btn"
-                >
-                  删除
-                </el-button>
-              </div>
-            </div>
-            <div class="position">{{ item.position }}</div>
-            <div class="card-time">{{ formatDateTime(item.created_at) }}</div>
-            <div v-if="item.deadline" class="card-deadline" :class="{
-              'deadline-urgent': getDeadlineUrgency(item.deadline) === 'urgent',
-              'deadline-warning': getDeadlineUrgency(item.deadline) === 'warning',
-              'deadline-expired': getDeadlineUrgency(item.deadline) === 'expired',
-            }">
-              <span class="deadline-label">Deadline:</span> {{ formatDateTime(item.deadline) }}
-              <el-tag v-if="getDeadlineUrgency(item.deadline) === 'expired'" size="small" type="danger" class="expired-tag">已过期</el-tag>
-            </div>
-            <div class="card-tags">
-              <el-tag v-for="tag in item.tags" :key="tag" size="small" class="tag">{{ tag }}</el-tag>
-            </div>
-          </div>
+          />
         </div>
       </div>
     </div>
@@ -958,63 +897,6 @@ onMounted(() => {
   background: #fff;
 }
 
-/* --- Kanban Card --- */
-.kanban-card {
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-left: 3px solid transparent;
-  border-radius: 8px;
-  padding: 14px;
-  margin-bottom: 10px;
-  cursor: grab;
-  transition: all 0.2s;
-  user-select: none;
-}
-
-.kanban-card:active {
-  cursor: grabbing;
-}
-
-.kanban-card.dragging {
-  opacity: 0.4;
-  transform: scale(1.02);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-}
-
-.kanban-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-  transform: translateY(-2px);
-}
-
-.kanban-card.card-selected {
-  border-color: #3b82f6;
-  background: #eff6ff;
-}
-
-/* Drag-drop success highlight */
-.kanban-card.card-highlighted {
-  animation: flash-green 0.6s ease;
-}
-
-@keyframes flash-green {
-  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); }
-  50% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0.2); background: #f0fdf4; }
-  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
-}
-
-/* Urgency border colors */
-.kanban-card.card-urgent {
-  border-left-color: #ef4444;
-}
-
-.kanban-card.card-warning {
-  border-left-color: #f97316;
-}
-
-.kanban-card.card-expired {
-  border-left-color: #991b1b;
-}
-
 .kanban-column.drag-over .column-body {
   background: #f0f9ff;
   border-radius: 8px;
@@ -1023,101 +905,6 @@ onMounted(() => {
 .kanban-column.drag-over {
   box-shadow: 0 0 0 2px #3b82f6 inset;
   border-radius: 12px;
-}
-
-/* --- Card internals --- */
-.card-top-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-}
-
-.batch-checkbox {
-  margin-top: 2px;
-  flex-shrink: 0;
-}
-
-.card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 6px;
-  flex: 1;
-}
-
-.company {
-  font-weight: 600;
-  font-size: 15px;
-  color: #1e3a5f;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.position {
-  font-size: 13px;
-  color: #64748b;
-  margin-bottom: 4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.card-time {
-  font-size: 12px;
-  color: #64748b;
-  margin-bottom: 8px;
-}
-
-.card-deadline {
-  font-size: 12px;
-  color: #f59e0b;
-  margin-bottom: 8px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-
-.card-deadline.deadline-urgent {
-  color: #ef4444;
-}
-
-.card-deadline.deadline-warning {
-  color: #f97316;
-}
-
-.card-deadline.deadline-expired {
-  color: #991b1b;
-}
-
-.deadline-label {
-  font-weight: 600;
-}
-
-.expired-tag {
-  margin-left: 4px;
-}
-
-.card-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.tag {
-  font-size: 12px;
-}
-
-.delete-btn {
-  opacity: 0.4;
-  padding: 2px 6px;
-  font-size: 12px;
-  transition: opacity 0.2s;
-}
-
-.kanban-card:hover .delete-btn {
-  opacity: 1;
 }
 
 /* --- Batch Action Bar --- */
@@ -1233,6 +1020,10 @@ onMounted(() => {
   cursor: pointer;
 }
 
+.tag {
+  font-size: 12px;
+}
+
 .text-muted {
   color: #c0c4cc;
 }
@@ -1282,10 +1073,6 @@ onMounted(() => {
 
   .kanban-column {
     min-width: 220px;
-  }
-
-  .kanban-card {
-    padding: 10px;
   }
 
   .list-view {

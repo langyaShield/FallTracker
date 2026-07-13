@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 from app.auth import get_current_user
 from app.database import get_db
 from app.models import ProfileField, User
+from app.modules.profile.queries import ProfileQueryService
+from app.modules.profile.service import ProfileNotFoundError, ProfileService
 from app.schemas import (
     ProfileBatchSave,
     ProfileCategoryOut,
@@ -42,13 +44,8 @@ def get_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """获取当前用户全部信息库，按 category → group_index 分组返回。"""
-    fields = (
-        db.query(ProfileField)
-        .filter(ProfileField.user_id == current_user.id)
-        .order_by(ProfileField.category, ProfileField.group_index, ProfileField.sort_order)
-        .all()
-    )
+    """获取当前用户全部信息库，按 category -> group_index 分组返回。"""
+    fields = ProfileQueryService(db).list_all_for_user(current_user.id)
 
     # 按 category 分组
     by_category: dict[str, list[ProfileField]] = defaultdict(list)
@@ -74,55 +71,8 @@ def batch_save_category(
     current_user: User = Depends(get_current_user),
 ):
     """批量保存某分类的所有分组（整体替换该分类下的数据）。"""
-    uid = current_user.id
-
-    # 删除该分类下的所有旧字段
-    db.query(ProfileField).filter(
-        ProfileField.user_id == uid,
-        ProfileField.category == category,
-    ).delete(synchronize_session=False)
-
-    # 计算新的 group_index：取 DB 中剩余数据和请求中保留的 gi 的最大值 +1
-    existing_max = (
-        db.query(ProfileField.group_index)
-        .filter(ProfileField.user_id == uid, ProfileField.category == category)
-        .order_by(ProfileField.group_index.desc())
-        .first()
-    )
-    max_gi = existing_max[0] if existing_max else 0
-    for group in data.groups:
-        if group.group_index is not None and group.group_index > max_gi:
-            max_gi = group.group_index
-    next_gi = max_gi + 1
-
-    for group in data.groups:
-        if category == "basic":
-            gi = 0  # 基本信息固定 group_index = 0
-        elif group.group_index is not None:
-            gi = group.group_index
-        else:
-            gi = next_gi
-            next_gi += 1
-
-        for field_item in group.fields:
-            obj = ProfileField(
-                user_id=uid,
-                category=category,
-                field_key=field_item.field_key,
-                field_value=field_item.field_value,
-                group_index=gi,
-                sort_order=field_item.sort_order,
-            )
-            db.add(obj)
-
-    db.commit()
-
-    # 返回更新后的该分类数据
-    fields = (
-        db.query(ProfileField)
-        .filter(ProfileField.user_id == uid, ProfileField.category == category)
-        .order_by(ProfileField.group_index, ProfileField.sort_order)
-        .all()
+    fields = ProfileService(db).batch_save_category(
+        current_user.id, category, data.model_dump()
     )
     groups = _group_fields(fields)
     return ProfileCategoryOut(category=category, groups=groups)
@@ -137,17 +87,9 @@ def create_field(
     current_user: User = Depends(get_current_user),
 ):
     """新增单个字段。"""
-    obj = ProfileField(
-        user_id=current_user.id,
-        category=data.category,
-        field_key=data.field_key,
-        field_value=data.field_value,
-        group_index=data.group_index,
-        sort_order=data.sort_order,
+    obj = ProfileService(db).create_field(
+        current_user.id, data.model_dump()
     )
-    db.add(obj)
-    db.commit()
-    db.refresh(obj)
     return ProfileFieldOut.model_validate(obj)
 
 
@@ -161,17 +103,12 @@ def update_field(
     current_user: User = Depends(get_current_user),
 ):
     """更新单个字段值。"""
-    obj = (
-        db.query(ProfileField)
-        .filter(ProfileField.id == field_id, ProfileField.user_id == current_user.id)
-        .first()
-    )
-    if not obj:
+    try:
+        obj = ProfileService(db).update_field(
+            field_id, current_user.id, data.model_dump(exclude_unset=True)
+        )
+    except ProfileNotFoundError:
         raise HTTPException(status_code=404, detail="字段不存在")
-    for field_name, value in data.model_dump(exclude_unset=True).items():
-        setattr(obj, field_name, value)
-    db.commit()
-    db.refresh(obj)
     return ProfileFieldOut.model_validate(obj)
 
 
@@ -184,15 +121,10 @@ def delete_field(
     current_user: User = Depends(get_current_user),
 ):
     """删除单个字段。"""
-    obj = (
-        db.query(ProfileField)
-        .filter(ProfileField.id == field_id, ProfileField.user_id == current_user.id)
-        .first()
-    )
-    if not obj:
+    try:
+        ProfileService(db).delete_field(field_id, current_user.id)
+    except ProfileNotFoundError:
         raise HTTPException(status_code=404, detail="字段不存在")
-    db.delete(obj)
-    db.commit()
     return {"success": True}
 
 
@@ -206,14 +138,7 @@ def delete_group(
     current_user: User = Depends(get_current_user),
 ):
     """删除一整个分组（如删除一条教育经历）。"""
-    count = (
-        db.query(ProfileField)
-        .filter(
-            ProfileField.user_id == current_user.id,
-            ProfileField.category == category,
-            ProfileField.group_index == group_index,
-        )
-        .delete(synchronize_session=False)
+    count = ProfileService(db).delete_group(
+        current_user.id, category, group_index
     )
-    db.commit()
     return {"success": True, "deleted": count}

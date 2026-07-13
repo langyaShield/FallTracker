@@ -4,9 +4,11 @@ from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.database import get_db
-from app.models import Bookmark, User
+from app.models import User
 from app.schemas import BookmarkCreate, BookmarkOut, BookmarkUpdate
 from app.ratelimit import limiter
+from app.modules.bookmarks.queries import BookmarkQueryService
+from app.modules.bookmarks.service import BookmarkNotFoundError, BookmarkService
 
 router = APIRouter(prefix="/bookmarks", tags=["bookmarks"])
 
@@ -21,14 +23,7 @@ def list_bookmarks(
     current_user: User = Depends(get_current_user),
 ):
     """获取当前用户所有网站，按 sort_order 和创建时间排序。支持 limit/offset 分页。"""
-    q = (
-        db.query(Bookmark)
-        .filter(Bookmark.user_id == current_user.id)
-        .order_by(Bookmark.sort_order, Bookmark.created_at)
-    )
-    if limit > 0:
-        q = q.limit(limit).offset(offset)
-    bookmarks = q.all()
+    bookmarks = BookmarkQueryService(db).list_bookmarks(current_user.id, limit, offset)
     return [BookmarkOut.model_validate(b) for b in bookmarks]
 
 
@@ -41,17 +36,7 @@ def create_bookmark(
     current_user: User = Depends(get_current_user),
 ):
     """创建新网站。"""
-    bookmark = Bookmark(
-        user_id=current_user.id,
-        title=data.title,
-        url=data.url,
-        category=data.category,
-        icon=data.icon,
-        sort_order=data.sort_order,
-    )
-    db.add(bookmark)
-    db.commit()
-    db.refresh(bookmark)
+    bookmark = BookmarkService(db).create_bookmark(current_user.id, data.model_dump())
     return BookmarkOut.model_validate(bookmark)
 
 
@@ -65,17 +50,12 @@ def update_bookmark(
     current_user: User = Depends(get_current_user),
 ):
     """更新网站。"""
-    bookmark = (
-        db.query(Bookmark)
-        .filter(Bookmark.id == bookmark_id, Bookmark.user_id == current_user.id)
-        .first()
-    )
-    if not bookmark:
+    try:
+        bookmark = BookmarkService(db).update_bookmark(
+            bookmark_id, current_user.id, data.model_dump(exclude_unset=True)
+        )
+    except BookmarkNotFoundError:
         raise HTTPException(status_code=404, detail="网站不存在")
-    for field_name, value in data.model_dump(exclude_unset=True).items():
-        setattr(bookmark, field_name, value)
-    db.commit()
-    db.refresh(bookmark)
     return BookmarkOut.model_validate(bookmark)
 
 
@@ -88,13 +68,8 @@ def delete_bookmark(
     current_user: User = Depends(get_current_user),
 ):
     """删除网站。"""
-    bookmark = (
-        db.query(Bookmark)
-        .filter(Bookmark.id == bookmark_id, Bookmark.user_id == current_user.id)
-        .first()
-    )
-    if not bookmark:
+    try:
+        bookmark = BookmarkService(db).delete_bookmark(bookmark_id, current_user.id)
+    except BookmarkNotFoundError:
         raise HTTPException(status_code=404, detail="网站不存在")
-    db.delete(bookmark)
-    db.commit()
     return {"success": True, "message": f"已删除网站 {bookmark.title}"}
