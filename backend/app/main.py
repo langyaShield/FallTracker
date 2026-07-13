@@ -228,7 +228,7 @@ async def lifespan(app: FastAPI):
             notify_upcoming_interviews,
             notify_upcoming_deadlines,
         )
-        from app.routers.backup import auto_backup_all_users
+        from app.modules.backup.service import auto_backup_all_users
         from app.modules.admin.service import cleanup_expired_invite_codes
 
         scheduler = BackgroundScheduler(daemon=True)
